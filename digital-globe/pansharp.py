@@ -10,9 +10,9 @@ Inputs: CatalogID, bounding box, flag option to equalize histograms
 
 Output: PNG file(s). (With @e flag, both original and equalized are saved.)
 
-Usage: python pansharp_grab.py CatalogID  bounding box [@e]
+Usage: python pansharp.py CatalogID  bounding box [@e]
 
-Ex: python pansharp_grab.py 1040010034CDD100 151.269378, -33.898346, 151.286458, -33.886092 @e
+Ex: python pansharp.py 1040010034CDD100 151.269378, -33.898346, 151.286458, -33.886092 @e
 """
 
 import numpy as np
