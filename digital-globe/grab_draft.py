@@ -30,9 +30,10 @@ python grab_draft.py -h
 
 """
 
-import argparse
+import sys
 import numpy as np
 import matplotlib.pyplot as plt
+import argparse
 
 import gbdxtools 
 
@@ -89,6 +90,7 @@ class DGImageGrabber(object):
         records = self.search_catalog()
         records_by_date = sorted(records,
                                 key=lambda t: t['properties']['timestamp'])
+        record, img = None, None
         while len(records_by_date) > 0:
             # TODO: check bbox against footprintWkt
             record = records_by_date.pop()
@@ -103,7 +105,7 @@ class DGImageGrabber(object):
                 break
             except Exception as e:
                 print 'Exception: {}'.format(e)
-                pass
+                pass 
         return record, img
         
     def build_filters(self):
@@ -198,6 +200,10 @@ if __name__ == '__main__':
     lon = args.pop('lon')
     grabber = DGImageGrabber(lat, lon, **args)
     record, img = grabber()
+    if img is None:
+        print ('No image found. Try expanding the date range or ' +
+               'change the scale to access a different image source.')
+        sys.exit(1)
     aoi = img.aoi(bbox=grabber.bbox)
     rgb = aoi.rgb()  # alternately, for raw multispectrum: raw = aoi.read()
     outfile = (record['identifier'] + '_' +
