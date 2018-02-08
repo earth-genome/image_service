@@ -2,7 +2,7 @@
 
 API ref: http://gbdxtools.readthedocs.io/en/latest/index.html
 
-Class DBImageGrabber: A class to grab an image respecting given specs.
+Class DGImageGrabber: A class to grab an image respecting given specs.
 
     Attributes:
         lat, lon: latitude and longitude of image center
