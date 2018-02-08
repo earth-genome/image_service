@@ -3,18 +3,21 @@ and Catalog ID.
 
 Ref: http://gbdxtools.readthedocs.io/en/latest/image_classes.html
 
-Image specs (default):  Pansharpened, atmosphere corrected, RGB bands
+Image specs (default):  Atmosphere corrected, RGB bands
 
-Inputs: CatalogID, bounding box, flag option to equalize histograms
-    Note: flag is set with @ in place of - to allow input of negative numbers
+Inputs: CatalogID, bounding box, flag option (@e) to equalize histograms,
+    flag option (@p) to pansharpen imagery.
+    Note: flag is set with @ in place of - to allow input of negative
+    numbers.
+    Note: Pansharpening implies a four-fold increase in resolution and
+    corresponding increase in tile downloads.
 
 Output: PNG file(s). (With @e flag, both original and equalized are saved.)
 
-Usage: python pansharp.py CatalogID  bounding box [@e]
+Usage: python grab_by_id_bbox.py CatalogID  bounding box [@e] [@p]
 
-Ex: python pansharp.py 1040010034CDD100 151.269378, -33.898346, 151.286458, -33.886092 @e
+Ex: python pansharp.py 1040010034CDD100 151.269378, -33.898346, 151.286458, -33.886092 @e 
 """
-
 import numpy as np
 import argparse
 import cv2
@@ -61,13 +64,19 @@ if __name__ == '__main__':
         action='store_true',
         help='Flag (True if set / no value required.)'
     )
+    parser.add_argument(
+        '@p', '@@pansharpen',
+        dest='pansharpen',
+        action='store_true',
+        help='Flag (True if set / no value required.)'
+    )
     args = parser.parse_args()
     bbox = [float(i.split(',')[0]) for i in args.bounding_box]
     outfile = args.catalog_id + '_LL{:.6f}_{:.6f}'.format(*bbox[:2])
     rgb = grab_rgb(
         args.catalog_id, 
         bbox=bbox, 
-        pansharpen=True,
+        pansharpen=args.pansharpen,
         acomp=True
     )
     plt.imsave(outfile + '.png', rgb)
