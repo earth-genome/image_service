@@ -23,7 +23,6 @@ For scale < MID_SCALE, DG imagery is sourced; otherwise Landsat8.
 """
 
 import numpy as np
-
 import gbdxtools 
 
 # Image size thresholds (half width or height) in km:
@@ -141,4 +140,4 @@ def dist_to_latitude(dist):
 
 def dist_to_longitude(dist, latitude):
     """Convert a ground distance to decimal degrees longitude."""
-    return float(dist)/(np.cos(np.radians(latitude))*KM_PER_DEGREE)
+    return float(dist)/(np.cos(np.radians(np.abs(latitude)))*KM_PER_DEGREE)
