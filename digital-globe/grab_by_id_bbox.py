@@ -1,6 +1,10 @@
 """ Routine to download an image from the DG Catalog given a bounding box
 and Catalog ID.
 
+This is a legacy routine (coded prior to dg_grabber.py) but still useful
+for downloading after extracting a Catalog ID and bounding box from
+Jupyter @ notebooks.geobigdata.io.
+
 Ref: http://gbdxtools.readthedocs.io/en/latest/image_classes.html
 
 Image specs (default):  Atmosphere corrected, RGB bands
