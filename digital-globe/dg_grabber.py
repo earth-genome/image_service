@@ -39,7 +39,6 @@ to create bounding boxes given various inputs.
 import numpy as np
 import gbdxtools
 from shapely import geometry, wkt
-import pdb
 
 # Conversion for latitudes:
 KM_PER_DEGREE = 111
@@ -62,8 +61,8 @@ DEFAULT_PARAMS = CATALOG_PARAMS.copy()
 DEFAULT_PARAMS.update(IMAGE_SPECS)
 
 # Image scale thresholds for guess_resolution(), width/height in km:
-SMALL_SCALE = 1.5
-MID_SCALE = 6.0 
+SMALL_SCALE = 2.0
+MID_SCALE = 10.0 
 
 
 class DGImageGrabber(object):

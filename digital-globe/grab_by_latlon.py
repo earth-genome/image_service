@@ -22,7 +22,6 @@ import matplotlib.pyplot as plt
 import argparse
 
 import dg_grabber
-import pdb
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -54,7 +53,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '-sd', '--startDate',
         type=str,
-        default='2016-01-01T09:51:36.0000Z',
+        default='2012-01-01T09:51:36.0000Z',
         help='Isoformat start date for image search: {}'.format(
             '2016-01-01T09:51:36.0000Z')
     )
@@ -75,8 +74,8 @@ if __name__ == '__main__':
     grabber = dg_grabber.DGImageGrabber(bbox, **args)
     imgs, records = grabber()
     if len(imgs) == 0:
-        print ('Try expanding the date range or ' +
-               'access dg_grabber.py for more options.')
+        print ('Try expanding the date range, change scale to change ' +
+               'sensor, or access dg_grabber.py for more options.')
         sys.exit(1)
     rgbs = [img.rgb() for img in imgs]  # alt. could do: raw = img.read()
     for rgb, rec in zip(rgbs, records):
