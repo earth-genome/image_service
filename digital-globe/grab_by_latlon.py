@@ -2,13 +2,17 @@
 
 Inputs:
     latitude, longitude,
-    scale (half size of image (width or height) in km
+    scale (size of image (width or height) in km)
 
 Usage:
-    python grab_by_latlon.py 38.8977 -77.0365 -s .5
+    python grab_by_latlon.py 38.8977 -77.0365 -s 3.5
     Outputs: PNG image
 
-For command line syntax with additional options:
+Parameters assumed: offNadirAngle=None, acomp=True, proj='EPSG:4326'
+Image source (incl. sensor and pansharpening) determined by default.
+For more flexibility, see/use dg_grabber.py.
+
+For command line syntax with additional supported option:
 python grab_draft.py -h
 
 """
@@ -18,6 +22,7 @@ import matplotlib.pyplot as plt
 import argparse
 
 import dg_grabber
+import pdb
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -63,19 +68,22 @@ if __name__ == '__main__':
     args = vars(parser.parse_args())
     lat = args.pop('lat')
     lon = args.pop('lon')
-    grabber = dg_grabber.DGImageGrabber(lat, lon, **args)
-    record, img = grabber()
-    if img is None:
-        print ('No image found. Try expanding the date range or ' +
-               'change the scale to access a different image source.')
+    scale = args.pop('scale')
+    bbox = dg_grabber.make_bbox(lat, lon,
+                              dg_grabber.latitude_from_dist(scale),
+                              dg_grabber.longitude_from_dist(scale,lat))
+    grabber = dg_grabber.DGImageGrabber(bbox, **args)
+    imgs, records = grabber()
+    if len(imgs) == 0:
+        print ('Try expanding the date range or ' +
+               'access dg_grabber.py for more options.')
         sys.exit(1)
-    aoi = img.aoi(bbox=grabber.bbox)
-    rgb = aoi.rgb()  # alternately, for raw multispectrum: raw = aoi.read()
-    outfile = (record['identifier'] + '_' +
-                record['properties']['timestamp'] +
-                '_lat{:.4f}lon{:.4f}size{:.2f}km'.format(
-                grabber.lat, grabber.lon, grabber.scale) + '.png')
-    print 'Record:\n{}'.format(record)
-    print '\nSaving to {}'.format(outfile)
-    plt.imsave(outfile, rgb)
+    rgbs = [img.rgb() for img in imgs]  # alt. could do: raw = img.read()
+    for rgb, rec in zip(rgbs, records):
+        outfile = (rec['identifier'] + '_' + rec['properties']['timestamp'] +
+                '_lat{:.4f}lon{:.4f}size{:.2f}km'.format(lat, lon, scale) +
+                '.png')
+        print 'Record:\n{}'.format(rec)
+        print '\nSaving to {}\n'.format(outfile)
+        plt.imsave(outfile, rgb)
 
