@@ -60,15 +60,14 @@ if __name__ == '__main__':
         '-sd', '--startDate',
         type=str,
         default='2012-01-01T09:51:36.0000Z',
-        help='Isoformat start date for image search: {}'.format(
-            '2016-01-01T09:51:36.0000Z')
+        help='Isoformat start date for image search, default: {}'.format(
+            '2012-01-01T09:51:36.0000Z')
     )
     parser.add_argument(
         '-ed', '--endDate',
         type=str,
         default=None,
-        help='Isoformat end date for image search: {}'.format(
-            '2018-01-01T09:51:36.0000Z')
+        help='Isoformat end date for image search (default None).'
     )
     args = vars(parser.parse_args())
     lat = args.pop('lat')
