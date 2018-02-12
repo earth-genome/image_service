@@ -45,10 +45,16 @@ if __name__ == '__main__':
             'e.g.: {}'.format(1.0)
     )
     parser.add_argument(
+        '-N', '--N_images',
+        type=int,
+        default=3,
+        help='Number of images to pull, default: {}'.format(3)
+    )
+    parser.add_argument(
         '-c', '--clouds',
         type=int,
         default=10,
-        help='Maximum percentage cloud cover, e.g.: {}'.format(10)
+        help='Maximum percentage cloud cover, default: {}'.format(10)
     )
     parser.add_argument(
         '-sd', '--startDate',
@@ -68,7 +74,7 @@ if __name__ == '__main__':
     lat = args.pop('lat')
     lon = args.pop('lon')
     scale = args.pop('scale')
-    bbox = dg_grabber.make_bbox(lat, lon,
+    bbox = dg_grabber.make_bbox(lat, lon, 
                               dg_grabber.latitude_from_dist(scale),
                               dg_grabber.longitude_from_dist(scale,lat))
     grabber = dg_grabber.DGImageGrabber(bbox, **args)
