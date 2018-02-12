@@ -45,30 +45,35 @@ if __name__ == '__main__':
             'e.g.: {}'.format(1.0)
     )
     parser.add_argument(
+        '-N', '--N_images',
+        type=int,
+        default=3,
+        help='Number of images to pull, default: {}'.format(3)
+    )
+    parser.add_argument(
         '-c', '--clouds',
         type=int,
         default=10,
-        help='Maximum percentage cloud cover, e.g.: {}'.format(10)
+        help='Maximum percentage cloud cover, default: {}'.format(10)
     )
     parser.add_argument(
         '-sd', '--startDate',
         type=str,
         default='2012-01-01T09:51:36.0000Z',
-        help='Isoformat start date for image search: {}'.format(
-            '2016-01-01T09:51:36.0000Z')
+        help='Isoformat start date for image search, default: {}'.format(
+            '2012-01-01T09:51:36.0000Z')
     )
     parser.add_argument(
         '-ed', '--endDate',
         type=str,
         default=None,
-        help='Isoformat end date for image search: {}'.format(
-            '2018-01-01T09:51:36.0000Z')
+        help='Isoformat end date for image search (default None).'
     )
     args = vars(parser.parse_args())
     lat = args.pop('lat')
     lon = args.pop('lon')
     scale = args.pop('scale')
-    bbox = dg_grabber.make_bbox(lat, lon,
+    bbox = dg_grabber.make_bbox(lat, lon, 
                               dg_grabber.latitude_from_dist(scale),
                               dg_grabber.longitude_from_dist(scale,lat))
     grabber = dg_grabber.DGImageGrabber(bbox, **args)
