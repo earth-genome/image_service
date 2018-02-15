@@ -23,13 +23,13 @@ Class DGImageGrabber: A class to grab an image respecting given specs.
 
 Notes on Attribute image_source:
 
-image_source is from ('WV', 'Landsat8'), and maybe eventually also 'TMS'.
-This refers both to a DG image class ('WV' ~ CatalogImage,
-'Landsat8' ~ LandsatImage, future 'TMS' ~ TmsImage), and in the case of 
-'WV', the assignment entails also assumptions about particular satellite 
-sensors expressed below in build_filters().  If image_source is None,
-guess_resolution() is called to make a best guess based on bbox size
-and hard-coded SCALE parameters.  
+image_source is from ('WV', 'DG-Legacy', 'Landsat8'), and maybe eventually
+also 'TMS'. This refers both to a DG image class ('WV', 'DG-Legacy' ~
+CatalogImage, 'Landsat8' ~ LandsatImage, future 'TMS' ~ TmsImage), and in
+the case of  'WV', 'DG-Legacy', the assignment entails also assumptions
+about particular satellite  sensors expressed below in build_filters().
+If image_source is None, guess_resolution() is called to make a best
+guess based on bbox size and hard-coded SCALE parameters.  
 
 See below also for functions to convert distances to lat/lon, 
 to create bounding boxes given various inputs, and to write images to disk.
@@ -128,20 +128,21 @@ class DGImageGrabber(object):
             record = records_by_date.pop()
             id = record['identifier']
             footprint = wkt.loads(record['properties']['footprintWkt'])
-            intersect = bbox.intersection(footprint).area/(bbox.area)
+            intersection = bbox.intersection(footprint)
+            intersect_frac = intersection.area/bbox.area
             print('Catalog ID {}:'.format(id))
             print('Timestamp: {}, Sensor: {}'.format(
                 record['properties']['timestamp'],
                 record['properties']['sensorPlatformName']))
             print('Percent area intersecting bounding box: {:.2f}'.format(
-                intersect))
-            if intersect < self.min_intersect:
+                intersect_frac))
+            if intersect_frac < self.min_intersect:
                 continue
             else:
                 print('Trying...')
             try:
                 img = self.grabber(id, **self.image_specs)
-                imgs.append(img.aoi(bbox=bbox.bounds))
+                imgs.append(img.aoi(bbox=intersection.bounds))
                 recs_retrieved.append(record)
                 print('Retrieved ID {}'.format(id))
             except Exception as e:
@@ -167,6 +168,9 @@ class DGImageGrabber(object):
             filters.append(offNadir)
         if self.image_source == 'Landsat8':
             sensors = "(sensorPlatformName = 'LANDSAT08')"
+        elif self.image_source == 'DG-Legacy':
+            sensors = ("(sensorPlatformName = 'QUICKBIRD02' OR " +
+                    "sensorPlatformName = 'IKONOS')")
         else:
             sensors = ("(sensorPlatformName = 'WORLDVIEW02' OR " +
                     "sensorPlatformName = 'WORLDVIEW03_VNIR' OR " +
@@ -194,7 +198,9 @@ class DGImageGrabber(object):
 
 
 def build_filenames(bbox, records, file_header=''):
-    """Build a filename for image output,
+    """Build a filename for image output.
+
+    Uses: catalog id and date, centroid lat/lon, and optional file_header
     """
     lon, lat = bbox.centroid.coords[:][0]
     size = np.max(get_side_distances(bbox))
@@ -224,7 +230,7 @@ def guess_resolution(bbox):
         if size <= SMALL_SCALE:
             pansharpen = True
     else:
-        image_source = 'Landsat8'
+        image_source = 'DG-Legacy'
     return image_source, pansharpen
 
 def get_side_distances(bbox):
@@ -255,7 +261,7 @@ def bbox_from_scale(lat, lon, scale):
 def square_bbox_from_scale(lat, lon, scale):
     """Make a bounding box given lat/lon and scale in km.
 
-    This routine reverses the compression in latitude from geoprojection,
+    This routine reverses the compression in latitude from geoprojection
     by increasing the increment in latitude by 1/cos(lat).
     """
     deltalat = latitude_from_dist(scale)/np.cos(np.radians(np.abs(lat)))
