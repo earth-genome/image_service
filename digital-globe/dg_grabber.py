@@ -48,7 +48,7 @@ KM_PER_DEGREE = 111
 CATALOG_PARAMS = {
     'clouds': 10,   # max percentage allowed cloud cover
     'offNadirAngle': None,  # (relation, angle), e.g. ('<', 10)
-    'startDate': '2012-01-01T09:51:36.0000Z',
+    'startDate': '2008-01-01T09:51:36.0000Z',
     'endDate': None
 }
 IMAGE_SPECS = {
@@ -250,6 +250,17 @@ def bbox_from_scale(lat, lon, scale):
     """Make a bounding box given lat/lon and scale in km."""
     bbox = make_bbox(lat, lon, latitude_from_dist(scale),
                      longitude_from_dist(scale, lat))
+    return bbox
+
+def square_bbox_from_scale(lat, lon, scale):
+    """Make a bounding box given lat/lon and scale in km.
+
+    This routine reverses the compression in latitude from geoprojection,
+    by increasing the increment in latitude by 1/cos(lat).
+    """
+    deltalat = latitude_from_dist(scale)/np.cos(np.radians(np.abs(lat)))
+    deltalon = longitude_from_dist(scale, lat)
+    bbox = make_bbox(lat, lon, deltalat, deltalon)
     return bbox
 
 # TODO: given a generic region (could be geojson), create
