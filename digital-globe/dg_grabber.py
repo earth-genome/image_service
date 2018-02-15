@@ -48,7 +48,7 @@ KM_PER_DEGREE = 111
 CATALOG_PARAMS = {
     'clouds': 10,   # max percentage allowed cloud cover
     'offNadirAngle': None,  # (relation, angle), e.g. ('<', 10)
-    'startDate': '2008-01-01T09:51:36.0000Z',
+    'startDate': '2008-09-01T00:00:00.0000Z',
     'endDate': None
 }
 IMAGE_SPECS = {
