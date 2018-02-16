@@ -8,7 +8,6 @@ Class DGImageGrabber: A class to grab an image respecting given specs.
         bbox:  a shapely box, with (x,y) coordinates (lon, lat)
         latlon: centroid of bbox
         image_source:  DG catalog source and sensor(s)
-        N_images: number of images to retrieve
         min_intersect: minimum percent area overlap of bbox & image
         params: catalog search and image parameters
         catalog_filters: catalog params in DG format
@@ -24,21 +23,23 @@ Class DGImageGrabber: A class to grab an image respecting given specs.
 
 Notes on Attribute image_source:
 
-image_source is from ('WV', 'Landsat8'), and maybe eventually also 'TMS'.
-This refers both to a DG image class ('WV' ~ CatalogImage,
-'Landsat8' ~ LandsatImage, future 'TMS' ~ TmsImage), and in the case of 
-'WV', the assignment entails also assumptions about particular satellite 
-sensors expressed below in build_filters().  If image_source is None,
-guess_resolution() is called to make a best guess based on bbox size
-and hard-coded SCALE parameters.  
+image_source is from ('WV', 'DG-Legacy', 'Landsat8'), and maybe eventually
+also 'TMS'. This refers both to a DG image class ('WV', 'DG-Legacy' ~
+CatalogImage, 'Landsat8' ~ LandsatImage, future 'TMS' ~ TmsImage), and in
+the case of  'WV', 'DG-Legacy', the assignment entails also assumptions
+about particular satellite  sensors expressed below in build_filters().
+If image_source is None, guess_resolution() is called to make a best
+guess based on bbox size and hard-coded SCALE parameters.  
 
-See below also for functions to convert distances to lat/lon and
-to create bounding boxes given various inputs.
+See below also for functions to convert distances to lat/lon, 
+to create bounding boxes given various inputs, and to write images to disk.
 """
 
 import numpy as np
-import gbdxtools
 from shapely import geometry, wkt
+import matplotlib.pyplot as plt
+import gbdxtools
+
 
 # Conversion for latitudes:
 KM_PER_DEGREE = 111
@@ -47,7 +48,7 @@ KM_PER_DEGREE = 111
 CATALOG_PARAMS = {
     'clouds': 10,   # max percentage allowed cloud cover
     'offNadirAngle': None,  # (relation, angle), e.g. ('<', 10)
-    'startDate': '2012-01-01T09:51:36.0000Z',
+    'startDate': '2008-09-01T00:00:00.0000Z',
     'endDate': None
 }
 IMAGE_SPECS = {
@@ -73,7 +74,6 @@ class DGImageGrabber(object):
         bbox:  a shapely box, with (x,y) coordinates (lon, lat)
         latlon: centroid of bbox
         image_source:  DG catalog source and sensor(s)
-        N_images: number of images to retrieve
         min_intersect: minimum percent area overlap of bbox & image
         params: catalog search and image parameters
         catalog_filters: catalog params in DG format
@@ -88,15 +88,13 @@ class DGImageGrabber(object):
             Returns a list of relevant records.
     """
 
-    def __init__(self, bbox, image_source=None, N_images=3,
-                 min_intersect=.9, **params):
+    def __init__(self, bbox, image_source=None, min_intersect=.9, **params):
         self.bbox = bbox
         self.latlon = self.bbox.centroid
         if image_source is None:
             self.image_source, params['pansharpen'] = guess_resolution(bbox)
         else:
             self.image_source = image_source
-        self.N_images = N_images
         self.min_intersect = min_intersect
         self.params = DEFAULT_PARAMS.copy()
         if params != {}:
@@ -107,10 +105,15 @@ class DGImageGrabber(object):
         }
         self.grabber = self.build_grabber()
 
-    def __call__(self, bbox=None):
+    def __call__(self, bbox=None, N_images=3,
+                 write_to_disk=False, file_header=''):
         """Grab most recent available images satifying instance parameters.
 
-        Argument: possible new bbox to use in lieu of self.bbox
+        Arguments:
+            bbox: a possible new bbox to use in lieu of self.bbox
+            N_images: number of images to retrieve
+            write_to_disk: write rgb form of images to disk
+            file_header: optional prefix for rgb image files
 
         Returns: List of images (areas of interest) as Dask objects,
             list of corresponding catalog records
@@ -121,32 +124,35 @@ class DGImageGrabber(object):
         records_by_date = sorted(records,
                                 key=lambda t: t['properties']['timestamp'])
         imgs, recs_retrieved = [], []
-        while len(records_by_date) > 0 and len(imgs) < self.N_images:
+        while len(records_by_date) > 0 and len(imgs) < N_images:
             record = records_by_date.pop()
             id = record['identifier']
             footprint = wkt.loads(record['properties']['footprintWkt'])
-            intersect = bbox.intersection(footprint).area/(bbox.area)
-            print 'Catalog ID {}:'.format(id)
-            print 'Timestamp: {}, Sensor: {}'.format(
+            intersection = bbox.intersection(footprint)
+            intersect_frac = intersection.area/bbox.area
+            print('Catalog ID {}:'.format(id))
+            print('Timestamp: {}, Sensor: {}'.format(
                 record['properties']['timestamp'],
-                record['properties']['sensorPlatformName']
-            )
-            print 'Percent area intersecting bounding box: {:.2f}'.format(
-                intersect)
-            if intersect < self.min_intersect:
+                record['properties']['sensorPlatformName']))
+            print('Percent area intersecting bounding box: {:.2f}'.format(
+                intersect_frac))
+            if intersect_frac < self.min_intersect:
                 continue
             else:
-                print 'Trying...'
+                print('Trying...')
             try:
                 img = self.grabber(id, **self.image_specs)
-                imgs.append(img.aoi(bbox=bbox.bounds))
+                imgs.append(img.aoi(bbox=intersection.bounds))
                 recs_retrieved.append(record)
-                print 'Retrieved ID {}'.format(id)
+                print('Retrieved ID {}'.format(id))
             except Exception as e:
-                print 'Exception: {}'.format(e)
+                print('Exception: {}'.format(e))
                 pass
-        print 'Found {} images of {} requested.'.format(len(imgs),
-                                                        self.N_images)
+        print('Found {} images of {} requested.'.format(len(imgs),
+                                                        N_images))
+        if len(imgs) > 0 and write_to_disk == True:
+            filenames = build_filenames(bbox, recs_retrieved, file_header)
+            write_rgbs(imgs, filenames)
         return imgs, recs_retrieved
         
     def build_filters(self):
@@ -162,6 +168,9 @@ class DGImageGrabber(object):
             filters.append(offNadir)
         if self.image_source == 'Landsat8':
             sensors = "(sensorPlatformName = 'LANDSAT08')"
+        elif self.image_source == 'DG-Legacy':
+            sensors = ("(sensorPlatformName = 'QUICKBIRD02' OR " +
+                    "sensorPlatformName = 'IKONOS')")
         else:
             sensors = ("(sensorPlatformName = 'WORLDVIEW02' OR " +
                     "sensorPlatformName = 'WORLDVIEW03_VNIR' OR " +
@@ -187,6 +196,28 @@ class DGImageGrabber(object):
             endDate=self.params['endDate'])
         return records
 
+
+def build_filenames(bbox, records, file_header=''):
+    """Build a filename for image output.
+
+    Uses: catalog id and date, centroid lat/lon, and optional file_header
+    """
+    lon, lat = bbox.centroid.coords[:][0]
+    size = np.max(get_side_distances(bbox))
+    tags = ('_lat{:.4f}lon{:.4f}size{:.1f}km'.format(lat, lon, size) +
+                '.png')
+    filenames = [(file_header + r['identifier'] + '_' +
+                   r['properties']['timestamp'] + tags) for r in records]
+    return filenames
+        
+def write_rgbs(imgs, filenames):
+    """Write a list of DG dask images to RGB PNGs with given filenames."""
+    rgbs = [img.rgb() for img in imgs]  
+    for rgb, outfile in zip(rgbs, filenames):
+        print('\nSaving to {}\n'.format(outfile))
+        plt.imsave(outfile, rgb)
+    return
+    
 def guess_resolution(bbox):
     """Guess a resolution given bbox and SCALE parameters.
 
@@ -199,7 +230,7 @@ def guess_resolution(bbox):
         if size <= SMALL_SCALE:
             pansharpen = True
     else:
-        image_source = 'Landsat8'
+        image_source = 'DG-Legacy'
     return image_source, pansharpen
 
 def get_side_distances(bbox):
@@ -220,6 +251,23 @@ def make_bbox(lat, lon, deltalat, deltalon):
     bbox = [lon-deltalon/2., lat-deltalat/2.,
                          lon+deltalon/2., lat+deltalat/2.]
     return geometry.box(*bbox)
+
+def bbox_from_scale(lat, lon, scale):
+    """Make a bounding box given lat/lon and scale in km."""
+    bbox = make_bbox(lat, lon, latitude_from_dist(scale),
+                     longitude_from_dist(scale, lat))
+    return bbox
+
+def square_bbox_from_scale(lat, lon, scale):
+    """Make a bounding box given lat/lon and scale in km.
+
+    This routine reverses the compression in latitude from geoprojection
+    by increasing the increment in latitude by 1/cos(lat).
+    """
+    deltalat = latitude_from_dist(scale)/np.cos(np.radians(np.abs(lat)))
+    deltalon = longitude_from_dist(scale, lat)
+    bbox = make_bbox(lat, lon, deltalat, deltalon)
+    return bbox
 
 # TODO: given a generic region (could be geojson), create
 # the bounding box. for geojson first: poly = geometry.asShape(geojson).

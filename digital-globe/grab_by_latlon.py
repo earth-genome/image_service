@@ -17,10 +17,7 @@ python grab_draft.py -h
 
 """
 
-import sys
-import matplotlib.pyplot as plt
 import argparse
-
 import dg_grabber
 
 if __name__ == '__main__':
@@ -69,25 +66,27 @@ if __name__ == '__main__':
         default=None,
         help='Isoformat end date for image search (default None).'
     )
+    parser.add_argument(
+        '-f', '--file_header',
+        type=str,
+        default='',
+        help='Short prefix for output image filenames.'
+    )
     args = vars(parser.parse_args())
     lat = args.pop('lat')
     lon = args.pop('lon')
     scale = args.pop('scale')
-    bbox = dg_grabber.make_bbox(lat, lon, 
-                              dg_grabber.latitude_from_dist(scale),
-                              dg_grabber.longitude_from_dist(scale,lat))
+    N_images = args.pop('N_images')
+    file_header = args.pop('file_header')
+    bbox = dg_grabber.bbox_from_scale(lat, lon, scale) 
     grabber = dg_grabber.DGImageGrabber(bbox, **args)
-    imgs, records = grabber()
+    imgs, records = grabber(N_images=N_images, write_to_disk=True,
+                            file_header=file_header)
     if len(imgs) == 0:
-        print ('Try expanding the date range, change scale to change ' +
+        print('Try expanding the date range, change scale to change ' +
                'sensor, or access dg_grabber.py for more options.')
-        sys.exit(1)
-    rgbs = [img.rgb() for img in imgs]  # alt. could do: raw = img.read()
-    for rgb, rec in zip(rgbs, records):
-        outfile = (rec['identifier'] + '_' + rec['properties']['timestamp'] +
-                '_lat{:.4f}lon{:.4f}size{:.2f}km'.format(lat, lon, scale) +
-                '.png')
-        print 'Record:\n{}'.format(rec)
-        print '\nSaving to {}\n'.format(outfile)
-        plt.imsave(outfile, rgb)
+    else:
+        for r in records:
+            print(r)
+        
 
