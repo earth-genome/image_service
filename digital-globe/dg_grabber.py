@@ -83,7 +83,7 @@ class DGImageGrabber(object):
     External methods:
         __call__: Search the database for available image(s).
             Returns: Dict of catalog record(s) and Dask object(s) for the
-                area defined by bbox
+                area defined by bbox, with options to write to disk.
         search_catalog:
             Returns a list of relevant records.
     """
@@ -106,14 +106,16 @@ class DGImageGrabber(object):
         self.grabber = self.build_grabber()
 
     def __call__(self, bbox=None, N_images=3,
-                 write_to_disk=False, file_header=''):
+                 write_styles=None, file_header=''):
         """Grab most recent available images satifying instance parameters.
 
         Arguments:
             bbox: a possible new bbox to use in lieu of self.bbox
             N_images: number of images to retrieve
-            write_to_disk: write rgb form of images to disk
-            file_header: optional prefix for rgb image files
+            write_styles: list of possible output image styles, from:
+                'DRA' (Dynamical Range Adjusted RGB PNG)
+                'Raw' (Raw RGB PNG)
+            file_header: optional prefix for output image files
 
         Returns: List of images (areas of interest) as Dask objects,
             list of corresponding catalog records
@@ -150,9 +152,11 @@ class DGImageGrabber(object):
                 pass
         print('Found {} images of {} requested.'.format(len(imgs),
                                                         N_images))
-        if len(imgs) > 0 and write_to_disk == True:
+        if len(imgs) > 0 and write_styles is not None:
             filenames = build_filenames(bbox, recs_retrieved, file_header)
-            write_rgbs(imgs, filenames)
+            for img, filename in zip(imgs, filenames):
+                for style in write_styles:
+                    self.write_img(img, filename, style=style)
         return imgs, recs_retrieved
         
     def build_filters(self):
@@ -196,28 +200,70 @@ class DGImageGrabber(object):
             endDate=self.params['endDate'])
         return records
 
-
+    def write_img(self, img, filename, style='DRA'):
+        """Write a DG dask image to file with given filename.
+                              
+        Input style: 'DRA' or 'Raw' 
+        """
+        if style == 'DRA':
+            rgb = img.rgb()
+        elif style == 'Raw':
+            multispec = img.read()
+            num_bands, rows, cols = multispec.shape
+            rgb = np.zeros((rows, cols, 3))
+            # Guesses based on typical DG band structures:
+            if num_bands == 4:
+                bands = [2, 1, 0]
+            elif num_bands == 8:
+                bands = [4, 2, 1]
+            else:
+                print('{}-band format not recognized. '.format(bands) +
+                          'No file written.\n')
+                return
+            for n, b in enumerate(bands):
+                rgb[:,:,n] = multispec[b,:,:]
+            # TODO: determine from DG the correct bit range
+            print('Unexpected bit range: {:d}-{:d}. '.format(
+                    int(np.min(rgb)), int(np.max(rgb))) +
+                    'Rescaling by max pixel value.') 
+            rgb = rgb/np.max(rgb)
+        filename += style + '.png'
+        print('\nSaving to {}\n'.format(filename))
+        plt.imsave(filename, rgb)
+        return
+    
+# TODO: Figure out DG img.geotiff method and add support to the above.
+# (currently the method returns good geotiff headers but uint16 tifs
+# with all values very close to zero).  A la: 
+"""
+        elif style == 'geotiff':
+            bands = ms.shape[0]
+            outfile = outfile + '.tif'
+            # Guesses based on typical DG band structures:
+            if bands == 4:
+                ms.geotiff(path=outfile, proj=self.proj, bands=[2,1,0])
+            elif bands == 8:
+                ms.geotiff(path=outfile, proj=self.proj, bands=[4,2,1])
+            else:
+                print('{}-band format not recognized.'.format(bands) +
+                        ' No file written.\n')
+"""
+        
 def build_filenames(bbox, records, file_header=''):
     """Build a filename for image output.
 
     Uses: catalog id and date, centroid lat/lon, and optional file_header
+
+    Return: filename prefix, ready to append '.png', '.tif', etc.
     """
     lon, lat = bbox.centroid.coords[:][0]
     size = np.max(get_side_distances(bbox))
-    tags = ('_lat{:.4f}lon{:.4f}size{:.1f}km'.format(lat, lon, size) +
-                '.png')
+    tags = ('_lat{:.4f}lon{:.4f}size{:.1f}km'.format(lat, lon, size))
     filenames = [(file_header + r['identifier'] + '_' +
                    r['properties']['timestamp'] + tags) for r in records]
     return filenames
         
-def write_rgbs(imgs, filenames):
-    """Write a list of DG dask images to RGB PNGs with given filenames."""
-    rgbs = [img.rgb() for img in imgs]  
-    for rgb, outfile in zip(rgbs, filenames):
-        print('\nSaving to {}\n'.format(outfile))
-        plt.imsave(outfile, rgb)
-    return
-    
+
 def guess_resolution(bbox):
     """Guess a resolution given bbox and SCALE parameters.
 
