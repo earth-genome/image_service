@@ -222,11 +222,19 @@ class DGImageGrabber(object):
                 return
             for n, b in enumerate(bands):
                 rgb[:,:,n] = multispec[b,:,:]
-            # TODO: determine from DG the correct bit range
-            print('Unexpected bit range: {:d}-{:d}. '.format(
-                    int(np.min(rgb)), int(np.max(rgb))) +
-                    'Rescaling by max pixel value.') 
-            rgb = rgb/np.max(rgb)
+            # TODO: Currently it seems like the bulk (say at 95% cutoff)
+            # of the multispectral histograms fall in 12-bit range,
+            # though WV2,3 datasheets specificy 11-bits.
+            # Assume 2**12 = 4096 as max value and reset outliers to 1.0.
+            PIXEL_MAX = 4096
+            print('\nRescaling raw pixel values assuming a {}-bit '.format(
+                int(np.log2(PIXEL_MAX))) + 'range. Clipping outliers.')
+            ninetyfifth = np.percentile(rgb, 95)
+            print('95th percentile of the image histogram ' +
+                      'has pixel value {}. '.format(int(ninetyfifth)) +
+                      'Cutting histogram at value {}.'.format(PIXEL_MAX))
+            rgb = rgb/PIXEL_MAX
+            rgb[np.where(rgb > 1)] = 1.0
         filename += style + '.png'
         print('\nSaving to {}\n'.format(filename))
         plt.imsave(filename, rgb)
