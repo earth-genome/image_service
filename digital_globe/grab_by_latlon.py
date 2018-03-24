@@ -38,14 +38,14 @@ if __name__ == '__main__':
         '-s', '--scale',
         type=float,
         default=1.0,
-        help='Approx. image size (half width or height) in km, ' +
+        help='Approx. image size (width or height) in km, ' +
             'e.g.: {}'.format(1.0)
     )
     parser.add_argument(
         '-N', '--N_images',
         type=int,
-        default=3,
-        help='Number of images to pull, default: {}'.format(3)
+        default=2,
+        help='Number of images to pull, default: {}'.format(2)
     )
     parser.add_argument(
         '-c', '--clouds',
@@ -79,8 +79,8 @@ if __name__ == '__main__':
     N_images = args.pop('N_images')
     file_header = args.pop('file_header')
     bbox = dg_grabber.bbox_from_scale(lat, lon, scale) 
-    grabber = dg_grabber.DGImageGrabber(bbox, **args)
-    imgs, records = grabber(N_images=N_images, write_to_disk=True,
+    grabber = dg_grabber.DGImageGrabber(**args)
+    imgs, records = grabber(bbox, N_images=N_images, write_styles=['DRA'],
                             file_header=file_header)
     if len(imgs) == 0:
         print('Try expanding the date range, change scale to change ' +
