@@ -5,8 +5,6 @@ API ref: http://gbdxtools.readthedocs.io/en/latest/index.html
 Class DGImageGrabber: A class to grab an image respecting given specs.
 
     Attributes:
-        bbox:  a shapely box, with (x,y) coordinates (lon, lat)
-        latlon: centroid of bbox
         image_source:  DG catalog source and sensor(s)
         min_intersect: minimum percent area overlap of bbox & image
         params: catalog search and image parameters
@@ -33,6 +31,12 @@ guess based on bbox size and hard-coded SCALE parameters.
 
 See below also for functions to convert distances to lat/lon, 
 to create bounding boxes given various inputs, and to write images to disk.
+
+Usage example:
+> bbox = bbox_from_scale(37.77, -122.42, 1.0)
+> g = DGImageGrabber(image_source='WV', pansharpen=True)
+> g(bbox, N_images=1, write_styles=['DRA'], file_header='SanFrancisco')
+
 """
 
 import numpy as np
@@ -71,8 +75,6 @@ class DGImageGrabber(object):
     """Class DGImageGrabber: Tool to grab a DG image respecting given specs.
 
     Attributes:
-        bbox:  a shapely box, with (x,y) coordinates (lon, lat)
-        latlon: centroid of bbox
         image_source:  DG catalog source and sensor(s)
         min_intersect: minimum percent area overlap of bbox & image
         params: catalog search and image parameters
@@ -88,13 +90,8 @@ class DGImageGrabber(object):
             Returns a list of relevant records.
     """
 
-    def __init__(self, bbox, image_source=None, min_intersect=.9, **params):
-        self.bbox = bbox
-        self.latlon = self.bbox.centroid
-        if image_source is None:
-            self.image_source, params['pansharpen'] = guess_resolution(bbox)
-        else:
-            self.image_source = image_source
+    def __init__(self, image_source=None, min_intersect=.9, **params):
+        self.image_source = image_source
         self.min_intersect = min_intersect
         self.params = DEFAULT_PARAMS.copy()
         if params != {}:
@@ -105,8 +102,7 @@ class DGImageGrabber(object):
         }
         self.grabber = self.build_grabber()
 
-    def __call__(self, bbox=None, N_images=3,
-                 write_styles=None, file_header=''):
+    def __call__(self, bbox, N_images=2, write_styles=None, file_header=''):
         """Grab most recent available images satifying instance parameters.
 
         Arguments:
@@ -120,9 +116,11 @@ class DGImageGrabber(object):
         Returns: List of images (areas of interest) as Dask objects,
             list of corresponding catalog records
         """
-        if bbox is None:
-            bbox = self.bbox
-        records = self.search_catalog()
+        if self.image_source is None:
+            self.image_source, pansharpen = guess_resolution(bbox)
+            self.image_specs.update({'pansharpen': pansharpen})
+        lat, lon = bbox.centroid.y, bbox.centroid.x
+        records = self.search_catalog(lat, lon)
         records_by_date = sorted(records,
                                 key=lambda t: t['properties']['timestamp'])
         imgs, recs_retrieved = [], []
@@ -157,6 +155,8 @@ class DGImageGrabber(object):
             for img, filename in zip(imgs, filenames):
                 for style in write_styles:
                     self.write_img(img, filename, style=style)
+        # reset initialized value
+        self.image_specs.update({'pansharpen': self.params['pansharpen']})
         return imgs, recs_retrieved
         
     def build_filters(self):
@@ -190,11 +190,11 @@ class DGImageGrabber(object):
             grabber = gbdxtools.CatalogImage
         return grabber
             
-    def search_catalog(self):
+    def search_catalog(self, lat, lon):
         """Search the DG catalog for relevant imagery."""
         cat = gbdxtools.catalog.Catalog()
         records = cat.search_point(
-            self.latlon.y, self.latlon.x,
+            lat, lon,
             filters=self.catalog_filters,
             startDate=self.params['startDate'],
             endDate=self.params['endDate'])
@@ -264,7 +264,7 @@ def build_filenames(bbox, records, file_header=''):
 
     Return: filename prefix, ready to append '.png', '.tif', etc.
     """
-    lon, lat = bbox.centroid.coords[:][0]
+    lon, lat = bbox.centroid.x, bbox.centroid.y
     size = np.max(get_side_distances(bbox))
     tags = ('_lat{:.4f}lon{:.4f}size{:.1f}km'.format(lat, lon, size))
     filenames = [(file_header + r['identifier'] + '_' +
@@ -288,8 +288,13 @@ def guess_resolution(bbox):
     return image_source, pansharpen
 
 def get_side_distances(bbox):
-    """Determine width and height of bbox in km, given coords in lat/lon."""
-    lon, lat = bbox.centroid.coords[:][0]
+    """Determine width and height of bbox in km, given coords in lat/lon.
+
+    Argument bbox: shapely box
+
+    Returns: width, height in km
+    """
+    lon, lat = bbox.centroid.x, bbox.centroid.y
     x_coords, y_coords = bbox.boundary.coords.xy
     deltalon = np.max(x_coords) - np.min(x_coords)
     deltalat = np.max(y_coords) - np.min(y_coords)
@@ -322,10 +327,6 @@ def square_bbox_from_scale(lat, lon, scale):
     deltalon = longitude_from_dist(scale, lat)
     bbox = make_bbox(lat, lon, deltalat, deltalon)
     return bbox
-
-# TODO: given a generic region (could be geojson), create
-# the bounding box. for geojson first: poly = geometry.asShape(geojson).
-# the for a shapely object do: object.bounds.
 
 def latitude_from_dist(dist):
     """Convert a ground distance to decimal degrees latitude."""
