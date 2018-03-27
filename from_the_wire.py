@@ -1,4 +1,20 @@
-# Routines to pull imagery for stories from the news wire.
+""" Class to pull imagery for stories from the news wire.
+
+The wire database is fixed in variables STORY_SEEDS and DB_CATEGORY.
+The imagery source is fixed (for now, single source only) via
+    IMAGE_GRABBER.
+
+Class PullForWire: Class to pull images for stories on the news wire.
+
+Usage with defaults: 
+> pfw = PullForWire()
+> pfw.pull_for_db()
+
+For a single story, given as a firebaseio.DBItem instance story:
+> pfw.pull_for_story(story)
+
+Primary output: images written to disk.
+"""
 
 import datetime
 import os
