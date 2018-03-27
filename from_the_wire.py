@@ -25,7 +25,7 @@ import numpy as np
 from shapely import geometry
 
 sys.path.append('../')
-sys.path.append('../story-seeds')
+sys.path.append('story-seeds/')
 import config  # story-seeds config
 from digital_globe import dg_grabber
 import firebaseio
