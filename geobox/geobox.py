@@ -71,3 +71,17 @@ def osm_to_shapely_box(osm_bbox):
     bbox = np.array(osm_bbox, dtype=float)
     return geometry.box(*bbox[[2,0,3,1]])
 
+def google_to_shapely_box(viewport):
+    """Convert a Google viewport to a shapely box.
+
+    Argument viewport: A Google viewport is a dict of form:
+        {'northeast': {'lat': -33.9806474, 'lng': 150.0169685},
+          'southwest': {'lat': -39.18316069999999, 'lng': 140.9616819}}
+
+    Returns: shapely box
+    """
+    points = geometry.asMultiPoint([[p['lng'], p['lat']]
+                                    for p in viewport.values()])
+    return geometry.box(*points.bounds)
+    
+
