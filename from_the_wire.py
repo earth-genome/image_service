@@ -8,11 +8,13 @@ import sys
 import numpy as np
 from shapely import geometry
 
+sys.path.append('../')
 sys.path.append('../story-seeds')
 import config  # story-seeds config
 from digital_globe import dg_grabber
 import firebaseio
-from newsapi_scraper import log_exceptions
+from geobox import geobox
+from logger import log_exceptions
 
 STORY_SEEDS = firebaseio.DB(config.FIREBASE_URL)
 DB_CATEGORY = '/WTL'
@@ -86,11 +88,11 @@ class PullForWire(object):
     
         def signal_handler(*args):
             print('KeyboardInterrupt: Writing logs before exiting...')
-            log_exceptions(except_log, dir=EXCEPTION_DIR)
+            log_exceptions(except_log, directory=EXCEPTION_DIR)
             sys.exit(0)
         
         signal.signal(signal.SIGINT, signal_handler)
-    
+        
         stories = db.grab_stories(category=category, startDate=startDate)
         stories = [s for s in stories
                    if 'core_locations' in s.record.keys()]
@@ -100,7 +102,7 @@ class PullForWire(object):
             written_images.append(image_records)
             except_log += log
 
-        log_exceptions(except_log, dir=EXCEPTION_DIR)
+        log_exceptions(except_log, directory=EXCEPTION_DIR)
         print('complete')
         return written_images
 
@@ -117,11 +119,11 @@ class PullForWire(object):
         for loc_name, loc_data in story.record['core_locations'].items():
             if 'osm' in loc_data.keys():
                 for n, osm in enumerate(loc_data['osm']):
-                    bbox = reform_bbox(osm['boundingbox'])
+                    bbox = geobox.osm_to_shapely_box(osm['boundingbox'])
                     bbox = self._enforce_size_specs(bbox)
                     print('Location: {}\n'.format(loc_name))
                     print('Bbox size: {:.2f} km x {:.2f} km\n'.format(
-                        *dg_grabber.get_side_distances(bbox)))
+                        *geobox.get_side_distances(bbox)))
                     try:
                         # TODO: eventually image_grabber should throw
                         # or log exceptions
@@ -149,7 +151,7 @@ class PullForWire(object):
         """
         min_size = self.size_specs['min_size']
         max_size = self.size_specs['max_size']
-        delx, dely = dg_grabber.get_side_distances(bbox)
+        delx, dely = geobox.get_side_distances(bbox)
         delx *= self.size_specs['bbox_rescaling']
         dely *= self.size_specs['bbox_rescaling']
         if delx < min_size:
@@ -161,22 +163,9 @@ class PullForWire(object):
         elif dely > max_size:
             dely = max_size
         lon, lat = bbox.centroid.x, bbox.centroid.y
-        deltalat = dg_grabber.latitude_from_dist(dely)
-        deltalon = dg_grabber.longitude_from_dist(delx, lat) 
-        bbox = dg_grabber.make_bbox(lat, lon, deltalat, deltalon)
+        deltalat = geobox.latitude_from_dist(dely)
+        deltalon = geobox.longitude_from_dist(delx, lat) 
+        bbox = geobox.make_bbox(lat, lon, deltalat, deltalon)
         return bbox
     
-def reform_bbox(osm_bbox):
-    """Convert a bounding box in OSM convention to a shapely box.
-
-    OSM retuns strings in order (S Lat, N Lat, W Lon, E Lon),
-        while a shapely box takes arguments:
-        shapely.geometry.box(minx, miny, maxx, maxy, ccw=True)
-
-    Arugment osm_bbox: boundingbox from an OSM record
-
-    Returns: shapely box
-    """
-    bbox = np.array(osm_bbox, dtype=float)
-    return geometry.box(*bbox[[2,0,3,1]])
 

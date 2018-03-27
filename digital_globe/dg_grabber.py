@@ -33,20 +33,21 @@ See below also for functions to convert distances to lat/lon,
 to create bounding boxes given various inputs, and to write images to disk.
 
 Usage example:
-> bbox = bbox_from_scale(37.77, -122.42, 1.0)
+> bbox = geobox.bbox_from_scale(37.77, -122.42, 1.0)
 > g = DGImageGrabber(image_source='WV', pansharpen=True)
 > g(bbox, N_images=1, write_styles=['DRA'], file_header='SanFrancisco')
 
 """
 
 import numpy as np
-from shapely import geometry, wkt
-import matplotlib.pyplot as plt
+import sys
+
 import gbdxtools
+from shapely import wkt
+import matplotlib.pyplot as plt
 
-
-# Conversion for latitudes:
-KM_PER_DEGREE = 111
+sys.path.append('../')
+from geobox import geobox
 
 # Default catalog and image parameters:
 CATALOG_PARAMS = {
@@ -265,19 +266,18 @@ def build_filenames(bbox, records, file_header=''):
     Return: filename prefix, ready to append '.png', '.tif', etc.
     """
     lon, lat = bbox.centroid.x, bbox.centroid.y
-    size = np.max(get_side_distances(bbox))
+    size = np.max(geobox.get_side_distances(bbox))
     tags = ('_lat{:.4f}lon{:.4f}size{:.1f}km'.format(lat, lon, size))
     filenames = [(file_header + r['identifier'] + '_' +
                    r['properties']['timestamp'] + tags) for r in records]
     return filenames
         
-
 def guess_resolution(bbox):
     """Guess a resolution given bbox and SCALE parameters.
 
     Returns: An image_source and a proposal for pansharpening
     """
-    size = np.max(get_side_distances(bbox))
+    size = np.max(geobox.get_side_distances(bbox))
     pansharpen = False
     if size <= MID_SCALE:
         image_source = 'WV'
@@ -286,62 +286,5 @@ def guess_resolution(bbox):
     else:
         image_source = 'DG-Legacy'
     return image_source, pansharpen
-
-def get_side_distances(bbox):
-    """Determine width and height of bbox in km, given coords in lat/lon.
-
-    Argument bbox: shapely box
-
-    Returns: width, height in km
-    """
-    lon, lat = bbox.centroid.x, bbox.centroid.y
-    x_coords, y_coords = bbox.boundary.coords.xy
-    deltalon = np.max(x_coords) - np.min(x_coords)
-    deltalat = np.max(y_coords) - np.min(y_coords)
-    deltax = dist_from_longitude(deltalon, lat)
-    deltay = dist_from_latitude(deltalat)
-    return deltax, deltay
-
-def make_bbox(lat, lon, deltalat, deltalon):
-    """Return a bounding box centered on given latitude/longitude.
-
-    Returns:  a shapely Polygon.
-    """
-    bbox = [lon-deltalon/2., lat-deltalat/2.,
-                         lon+deltalon/2., lat+deltalat/2.]
-    return geometry.box(*bbox)
-
-def bbox_from_scale(lat, lon, scale):
-    """Make a bounding box given lat/lon and scale in km."""
-    bbox = make_bbox(lat, lon, latitude_from_dist(scale),
-                     longitude_from_dist(scale, lat))
-    return bbox
-
-def square_bbox_from_scale(lat, lon, scale):
-    """Make a bounding box given lat/lon and scale in km.
-
-    This routine reverses the compression in latitude from geoprojection
-    by increasing the increment in latitude by 1/cos(lat).
-    """
-    deltalat = latitude_from_dist(scale)/np.cos(np.radians(np.abs(lat)))
-    deltalon = longitude_from_dist(scale, lat)
-    bbox = make_bbox(lat, lon, deltalat, deltalon)
-    return bbox
-
-def latitude_from_dist(dist):
-    """Convert a ground distance to decimal degrees latitude."""
-    return float(dist)/KM_PER_DEGREE
-
-def dist_from_latitude(deltalat):
-    "Convert an increment in latitude to a ground distance in km."""
-    return float(deltalat)*KM_PER_DEGREE
-
-def longitude_from_dist(dist, lat):
-    """Convert a ground distance to decimal degrees longitude."""
-    return dist/(np.cos(np.radians(np.abs(lat)))*KM_PER_DEGREE)
-
-def dist_from_longitude(deltalon, lat):
-    "Convert an increment in longitude to a ground distance in km."""
-    return deltalon*(np.cos(np.radians(np.abs(lat)))*KM_PER_DEGREE)
 
 
