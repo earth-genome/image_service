@@ -24,12 +24,12 @@ import sys
 import numpy as np
 from shapely import geometry
 
-sys.path.append('../')
-sys.path.append('story-seeds/')
-import config  # story-seeds config
+import config 
 from digital_globe import dg_grabber
-import firebaseio
 from geobox import geobox
+from geobox import conversions
+sys.path.append('story-seeds/')
+import firebaseio
 from logger import log_exceptions
 
 STORY_SEEDS = firebaseio.DB(config.FIREBASE_URL)
@@ -179,9 +179,12 @@ class PullForWire(object):
         elif dely > max_size:
             dely = max_size
         lon, lat = bbox.centroid.x, bbox.centroid.y
-        deltalat = geobox.latitude_from_dist(dely)
-        deltalon = geobox.longitude_from_dist(delx, lat) 
+        deltalat = conversions.latitude_from_dist(dely)
+        deltalon = conversions.longitude_from_dist(delx, lat) 
         bbox = geobox.make_bbox(lat, lon, deltalat, deltalon)
         return bbox
     
 
+if __name__ == '__main__':
+    puller = PullForWire()
+    puller.pull_for_db()
