@@ -1,4 +1,7 @@
 
+# images files
+WTLImages*
+
 # config file
 config.py
 */config.py
