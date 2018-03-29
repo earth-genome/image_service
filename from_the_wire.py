@@ -17,6 +17,8 @@ Primary output: images written to disk.
 """
 
 import datetime
+import logging
+from logging import handlers
 import os
 import signal
 import sys
@@ -30,14 +32,14 @@ from geobox import geobox
 from geobox import conversions
 sys.path.append('story-seeds/')
 import firebaseio
-from logger import log_exceptions
 
 STORY_SEEDS = firebaseio.DB(config.FIREBASE_URL)
 DB_CATEGORY = '/WTL'
 IMAGE_GRABBER = dg_grabber.DGImageGrabber()
 
 IMAGE_DIR = 'WTLImages' + datetime.date.today().isoformat()
-EXCEPTION_DIR = 'FTWexception_logs'
+EXCEPTIONS_DIR = 'FTWexception_logs'
+LOGFILE = 'FTW.log'
 
 # See the particular image_grabber for additional parameters
 IMAGE_SIZE_SPECS = {
@@ -69,6 +71,7 @@ class PullForWire(object):
             and image size.
         style_specs: dict for image number and processing specs
         image_dir: directory to write images
+        logger: logging.getLogger instance
     """
     
     def __init__(self,
@@ -82,6 +85,7 @@ class PullForWire(object):
         self.image_dir = image_dir
         if not os.path.exists(image_dir):
             os.makedirs(image_dir)
+        self.logger = _build_logger()
 
     def pull_for_db(self,
                     db=STORY_SEEDS,
@@ -96,29 +100,20 @@ class PullForWire(object):
 
         Output: images written to disk
         
-        Returns: list of image filenames
+        Returns: list of image records
         """
 
         written_images = []
-        except_log = ''
-    
-        def signal_handler(*args):
-            print('KeyboardInterrupt: Writing logs before exiting...')
-            log_exceptions(except_log, directory=EXCEPTION_DIR)
-            sys.exit(0)
-        
-        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGINT, _signal_handler)
         
         stories = db.grab_stories(category=category, startDate=startDate)
         stories = [s for s in stories
                    if 'core_locations' in s.record.keys()]
         for s in stories:
             print('Pulling images for: {}\n'.format(s.idx))
-            image_records, log = self.pull_for_story(s)
+            image_records = self.pull_for_story(s)
             written_images.append(image_records)
-            except_log += log
 
-        log_exceptions(except_log, directory=EXCEPTION_DIR)
         print('complete')
         return written_images
 
@@ -129,9 +124,9 @@ class PullForWire(object):
 
         Output:  Images written to disk
 
+        Returns: list of image records
         """
         image_records = []
-        except_log = ''
         for loc_name, loc_data in story.record['core_locations'].items():
             if 'osm' in loc_data.keys():
                 for n, osm in enumerate(loc_data['osm']):
@@ -141,8 +136,6 @@ class PullForWire(object):
                     print('Bbox size: {:.2f} km x {:.2f} km\n'.format(
                         *geobox.get_side_distances(bbox)))
                     try:
-                        # TODO: eventually image_grabber should throw
-                        # or log exceptions
                         imgs, recs = self.image_grabber(
                             bbox,
                             N_images=self.style_specs['N_images'],
@@ -152,10 +145,11 @@ class PullForWire(object):
                                 loc_name+str(n+1)+'-'))
                         image_records.append(recs)
                     except Exception as e:
-                        except_log += 'Story {}, Location {}\n'.format(
-                            story.idx, loc_name)
-                        except_log += 'Exception: {}'.format(repr(e))
-        return image_records, except_log
+                        self.logger.error(
+                            'Story {}, Loc {}\n'.format(
+                                story.idx, loc_name),
+                            exc_info=True)
+        return image_records
 
     def _enforce_size_specs(self, bbox):
         """Resize bbox if necesssary to make dimensions conform
@@ -183,8 +177,30 @@ class PullForWire(object):
         deltalon = conversions.longitude_from_dist(delx, lat) 
         bbox = geobox.make_bbox(lat, lon, deltalat, deltalon)
         return bbox
-    
+
+
+def _build_logger(directory=EXCEPTIONS_DIR, logfile=LOGFILE):
+    logger = logging.getLogger(__name__)
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+    trfh = handlers.TimedRotatingFileHandler(
+        os.path.join(directory, logfile), when='D')
+    logger.addHandler(trfh)
+    return logger
+
+def _signal_handler(*args):
+    print('KeyboardInterrupt: Writing logs before exiting...')
+    logging.shutdown()
+    sys.exit(0)
 
 if __name__ == '__main__':
+    try:
+        startDate = sys.argv[1]
+    except IndexError:
+        print("Using today's date as default startDate for " +
+            "pulling stories.")
+        print('Optionally, you may specify a date: ' +
+              'python from_the_wire.py 2018-03-28')
+        startDate = datetime.date.today().isoformat()
     puller = PullForWire()
-    puller.pull_for_db()
+    puller.pull_for_db(startDate=startDate)
