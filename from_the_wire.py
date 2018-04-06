@@ -76,15 +76,19 @@ class PullForWire(object):
     
     def __init__(self,
                  image_grabber=IMAGE_GRABBER,
-                 size_specs=IMAGE_SIZE_SPECS,
-                 style_specs=IMAGE_STYLE_SPECS,
-                 image_dir=IMAGE_DIR):
+                 image_dir=IMAGE_DIR,
+                 **specs):
         self.image_grabber = image_grabber
-        self.size_specs = size_specs
-        self.style_specs = style_specs
         self.image_dir = image_dir
         if not os.path.exists(image_dir):
             os.makedirs(image_dir)
+        self.size_specs = IMAGE_SIZE_SPECS.copy()
+        self.style_specs = IMAGE_STYLE_SPECS.copy()
+        for k,v in specs.items():
+            if k in self.size_specs.keys():
+                self.size_specs.update({k:v})
+            if k in self.style_specs.keys():
+                self.style_specs.update({k:v})
         self.logger = _build_logger()
 
     def pull_for_db(self,
