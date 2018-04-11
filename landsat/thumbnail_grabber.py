@@ -15,7 +15,10 @@ import json
 import os
 
 from google.cloud import storage
+import matplotlib.pyplot as plt
 import requests
+
+from postprocessing import color_correct
 
 CATALOG_PARAMS = {
     'landsat_scale': .4,
@@ -34,6 +37,7 @@ class ThumbnailGrabber(object):
         storage_client: cloud storage client instance
         bucket: bucket within cloud storage
         image_dir: local image for temporary writing of images
+        postprocess: True/False to apply brightness and contrast transform
         logger: logging.GetLogger() instance (or None)
     
     Method:
@@ -43,6 +47,7 @@ class ThumbnailGrabber(object):
                  base_url=WEBAPP_URL,
                  storage_project=GOOGLE_CLOUD_PROJECT,
                  bucket_name=BUCKET_NAME,
+                 postprocess=True,
                  logger=None):
         self.base_url = base_url
         self.storage_client = storage.Client(project=storage_project)
@@ -51,6 +56,7 @@ class ThumbnailGrabber(object):
                                       'tmp-imgs')
         if not os.path.exists(self.image_dir):
             os.makedirs(self.image_dir)
+        self.postprocess = postprocess
         self.logger = logger
         
     def source_and_post(self, lat, lon, N_images=4,
@@ -84,6 +90,8 @@ class ThumbnailGrabber(object):
                 img_path = save_image(self.base_url,
                                       payload,
                                       self.image_dir)
+                if self.postprocess:
+                    brighten(img_path)
                 thumbnail_url = upload_blob(self.bucket,
                                        img_path,
                                        os.path.split(img_path)[1])
@@ -96,6 +104,17 @@ class ThumbnailGrabber(object):
                 else:
                     self.logger.exception(e)
         return thumbnail_urls
+
+def brighten(img_path):
+    """Apply brightness and contrast transform to img_path.
+
+    Overwrites img_path with corrected image.
+    """
+    img = plt.imread(img_path)
+    cc = color_correct.ColorCorrect()
+    img = cc.brightness_and_contrast(img)
+    plt.imsave(img_path, img)
+    return
 
 def save_image(base_url, payload, image_dir):
     """Pull image from web app and save locally.
