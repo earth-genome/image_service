@@ -18,7 +18,6 @@ Primary output: images written to disk.
 
 import datetime
 import logging
-from logging import handlers
 import os
 import signal
 import sys
@@ -38,8 +37,9 @@ DB_CATEGORY = '/WTL'
 IMAGE_GRABBER = dg_grabber.DGImageGrabber()
 
 IMAGE_DIR = 'WTLImages' + datetime.date.today().isoformat()
-EXCEPTIONS_DIR = 'FTWexception_logs'
-LOGFILE = 'FTW.log'
+EXCEPTIONS_DIR = os.path.join(os.path.dirname(__file__),
+                              'FTWexception_logs')
+LOGFILE = 'FTW' + datetime.date.today().isoformat() + '.log'
 
 # See the particular image_grabber for additional parameters
 IMAGE_SIZE_SPECS = {
@@ -187,9 +187,8 @@ def _build_logger(directory=EXCEPTIONS_DIR, logfile=LOGFILE):
     logger = logging.getLogger(__name__)
     if not os.path.exists(directory):
         os.makedirs(directory)
-    trfh = handlers.TimedRotatingFileHandler(
-        os.path.join(directory, logfile), when='D')
-    logger.addHandler(trfh)
+    fh = logging.FileHandler(os.path.join(directory, logfile))
+    logger.addHandler(fh)
     return logger
 
 def _signal_handler(*args):
