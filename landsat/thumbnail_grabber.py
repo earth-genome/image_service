@@ -27,6 +27,7 @@ CATALOG_PARAMS = {
 }
 WEBAPP_URL = 'http://earthrise-assets.herokuapp.com/nasa/image'
 STAGING_DIR = os.path.join(os.path.dirname(__file__), 'tmp-imgs')
+BUCKET_TOOL = cloud_storage.BucketTool('landsat-thumbnails')
 
 class ThumbnailGrabber(object):
     """Pull Landsat thumbnails from a web app and upload to cloud
@@ -36,7 +37,7 @@ class ThumbnailGrabber(object):
         base_url: web app url base
         staging_dir: directory for temporary writing of images
         postprocessor: function to color correct image (or None)
-        bucket: Google Cloud storage bucket
+        bucket_tool: class instance to access Google Cloud storage bucket
         logger: logging.GetLogger() instance (or None)
     
     Method:
@@ -46,14 +47,14 @@ class ThumbnailGrabber(object):
                  base_url=WEBAPP_URL,
                  staging_dir=STAGING_DIR,
                  postprocessor=color.ColorCorrect().brightness_and_contrast,
-                 bucket=cloud_storage.Bucketer('landsat-thumbnails'),
+                 bucket_tool=BUCKET_TOOL,
                  logger=None):
         self.base_url = base_url
         if not os.path.exists(staging_dir):
             os.makedirs(staging_dir)
         self.staging_dir = staging_dir
         self.postprocessor = postprocessor
-        self.bucket = bucket
+        self.bucket_tool = bucket_tool
         self.logger = logger
         
     def source_and_post(self, lat, lon, N_images=4,
@@ -85,7 +86,7 @@ class ThumbnailGrabber(object):
             })
             try: 
                 img_path = self._save_image(payload)
-                url = self.bucket.upload_blob(img_path,
+                url = self.bucket_tool.upload_blob(img_path,
                                          os.path.split(img_path)[1])
                 thumbnail_urls.append(url)
                 os.remove(img_path)
