@@ -11,22 +11,22 @@ Usage with default parameters:
 
 from datetime import date
 from datetime import timedelta
+import io
 import json
 import os
 
-from google.cloud import storage
 import matplotlib.pyplot as plt
 import requests
 
-from postprocessing import color_correct
+from cloud_storage import Bucketer
+from postprocessing.color_correct import ColorCorrect
 
 CATALOG_PARAMS = {
     'landsat_scale': .4,
     'days': 90
 }
 WEBAPP_URL = 'http://earthrise-assets.herokuapp.com/nasa/image'
-GOOGLE_CLOUD_PROJECT = 'good-locations'
-BUCKET_NAME = 'landsat-thumbnails'
+STAGING_DIR = os.path.join(os.path.dirname(__file__), 'tmp-imgs')
 
 class ThumbnailGrabber(object):
     """Pull Landsat thumbnails from a web app and upload to cloud
@@ -34,10 +34,9 @@ class ThumbnailGrabber(object):
 
     Attributes:
         base_url: web app url base
-        storage_client: cloud storage client instance
-        bucket: bucket within cloud storage
-        image_dir: local image for temporary writing of images
-        postprocess: True/False to apply brightness and contrast transform
+        staging_dir: directory for temporary writing of images
+        postprocessor: function to color correct image (or None)
+        bucket: Google Cloud storage bucket
         logger: logging.GetLogger() instance (or None)
     
     Method:
@@ -45,18 +44,16 @@ class ThumbnailGrabber(object):
     """
     def __init__(self,
                  base_url=WEBAPP_URL,
-                 storage_project=GOOGLE_CLOUD_PROJECT,
-                 bucket_name=BUCKET_NAME,
-                 postprocess=True,
+                 staging_dir=STAGING_DIR,
+                 postprocessor=ColorCorrect().brightness_and_contrast,
+                 bucket=Bucketer('landsat-thumbnails'),
                  logger=None):
         self.base_url = base_url
-        self.storage_client = storage.Client(project=storage_project)
-        self.bucket = self.storage_client.get_bucket(bucket_name)
-        self.image_dir = os.path.join(os.path.dirname(__file__),
-                                      'tmp-imgs')
-        if not os.path.exists(self.image_dir):
-            os.makedirs(self.image_dir)
-        self.postprocess = postprocess
+        if not os.path.exists(staging_dir):
+            os.makedirs(staging_dir)
+        self.staging_dir = staging_dir
+        self.postprocessor = postprocessor
+        self.bucket = bucket
         self.logger = logger
         
     def source_and_post(self, lat, lon, N_images=4,
@@ -87,15 +84,10 @@ class ThumbnailGrabber(object):
                 'end': endDate.isoformat()
             })
             try: 
-                img_path = save_image(self.base_url,
-                                      payload,
-                                      self.image_dir)
-                if self.postprocess:
-                    brighten(img_path)
-                thumbnail_url = upload_blob(self.bucket,
-                                       img_path,
-                                       os.path.split(img_path)[1])
-                thumbnail_urls.append(thumbnail_url)
+                img_path = self._save_image(payload)
+                url = self.bucket.upload_blob(img_path,
+                                         os.path.split(img_path)[1])
+                thumbnail_urls.append(url)
                 os.remove(img_path)
             except Exception as e:
                 if self.logger is None:
@@ -105,50 +97,26 @@ class ThumbnailGrabber(object):
                     self.logger.exception(e)
         return thumbnail_urls
 
-def brighten(img_path):
-    """Apply brightness and contrast transform to img_path.
+    def _save_image(self, payload):
+        """Pull image from web app, postprocess, and save to staging_dir.
 
-    Overwrites img_path with corrected image.
-    """
-    img = plt.imread(img_path)
-    cc = color_correct.ColorCorrect()
-    img = cc.brightness_and_contrast(img)
-    plt.imsave(img_path, img)
-    return
+        Arguments:
+            payload: dict containing, at minimum, scene lat, lon, scale.
 
-def save_image(base_url, payload, image_dir):
-    """Pull image from web app and save locally.
-
-    Arguments:
-        base: base url for source web app
-        payload: dict containing, at minimum, scene lat, lon, scale.
-        image_dir:  path to local directory to save image
-
-    Returns: local path to image
-    """
-    filename = ''.join(k+v for k,v in payload.items()) + '.png'
-    path = os.path.join(image_dir, filename)
-    res = requests.get(base_url,
-                       params=payload,
-                       allow_redirects=True)
-    img_url = json.loads(res.text)['url']
-    res = requests.get(img_url)
-    with open(path, 'wb') as f:
-        f.write(res.content)
-    return path
-
-def upload_blob(bucket, source_file_name, destination_blob_name):
-    """Uploads a file to the bucket.
-
-    Arguments:
-        bucket: cloud storage bucket
-        source_file_name: local path to file to upload
-        destination_blob_name: filename in remote bucket
-
-    Returns: url to remote file
-    """
-    blob = bucket.blob(destination_blob_name)
-    blob.upload_from_filename(source_file_name)
-    blob.make_public()
-    return blob.public_url
-
+        Returns: path to image
+        """
+        filename = ''.join(k+v for k,v in payload.items()) + '.png'
+        path = os.path.join(self.staging_dir, filename)
+        res = requests.get(self.base_url,
+                           params=payload,
+                           allow_redirects=True)
+        img_url = json.loads(res.text)['url']
+        res = requests.get(img_url)
+        if self.postprocessor:
+            img = plt.imread(io.BytesIO(res.content))
+            corrected = self.postprocessor(img)
+            plt.imsave(path, corrected)
+        else:
+            with open(path, 'wb') as f:
+                f.write(res.content)
+        return path
