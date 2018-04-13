@@ -1,9 +1,9 @@
-"""Class to upload files to Google Cloud storage."""
+"""Class to access Google Cloud storage."""
 
 from google.cloud import storage
 
-class Bucketer(object):
-    """Upload files Google Cloud storage.
+class BucketTool(object):
+    """Access Google Cloud storage.
 
     Attributes:
         bucket: Cloud storage bucket
