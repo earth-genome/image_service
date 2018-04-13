@@ -18,8 +18,8 @@ import os
 import matplotlib.pyplot as plt
 import requests
 
-from cloud_storage import Bucketer
-from postprocessing.color_correct import ColorCorrect
+import cloud_storage
+from postprocessing import color
 
 CATALOG_PARAMS = {
     'landsat_scale': .4,
@@ -45,8 +45,8 @@ class ThumbnailGrabber(object):
     def __init__(self,
                  base_url=WEBAPP_URL,
                  staging_dir=STAGING_DIR,
-                 postprocessor=ColorCorrect().brightness_and_contrast,
-                 bucket=Bucketer('landsat-thumbnails'),
+                 postprocessor=color.ColorCorrect().brightness_and_contrast,
+                 bucket=cloud_storage.Bucketer('landsat-thumbnails'),
                  logger=None):
         self.base_url = base_url
         if not os.path.exists(staging_dir):
