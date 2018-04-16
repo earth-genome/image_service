@@ -1,6 +1,7 @@
 
 # images files
 WTLImages*
+*/tmp-imgs/*
 
 # config file
 config.py
