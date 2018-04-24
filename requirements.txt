@@ -1,6 +1,6 @@
 numpy
 shapely
 matplotlib
-gbdxtools==0.14.6
+gbdxtools==0.14.10
 google-cloud-storage==1.8.0
 scikit-image==0.13.1
