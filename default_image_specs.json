@@ -1,0 +1,10 @@
+{
+    "clouds": 10,
+    "min_intersect": 0.9,
+    "startDate": "2008-09-01T00:00:00.0000Z",
+    "endDate": null,
+    "bbox_rescaling": 2,
+    "min_size": 0.5,
+    "max_size": 10,
+    "N_images": 1
+}
