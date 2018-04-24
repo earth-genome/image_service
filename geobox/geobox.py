@@ -34,9 +34,9 @@ def make_bbox(lat, lon, deltalat, deltalon):
 
     Returns:  a shapely Polygon.
     """
-    bbox = [lon-deltalon/2., lat-deltalat/2.,
+    bounds = [lon-deltalon/2., lat-deltalat/2.,
                          lon+deltalon/2., lat+deltalat/2.]
-    return geometry.box(*bbox)
+    return geometry.box(*bounds)
 
 def bbox_from_scale(lat, lon, scale):
     """Make a bounding box given lat/lon and scale in km."""
@@ -68,8 +68,8 @@ def osm_to_shapely_box(osm_bbox):
 
     Returns: shapely box
     """
-    bbox = np.array(osm_bbox, dtype=float)
-    return geometry.box(*bbox[[2,0,3,1]])
+    bounds = np.array(osm_bbox, dtype=float)
+    return geometry.box(*bounds[[2,0,3,1]])
 
 def google_to_shapely_box(viewport):
     """Convert a Google viewport to a shapely box.
