@@ -4,126 +4,114 @@ API ref: http://gbdxtools.readthedocs.io/en/latest/index.html
 
 Class DGImageGrabber: A class to grab an image respecting given specs.
 
-    Attributes:
-        image_source:  DG catalog source and sensor(s)
-        min_intersect: minimum percent area overlap of bbox & image
-        params: catalog search and image parameters
-        catalog_filters: catalog params in DG format
-        image_specs:  image parameters
-        grabber: DG image grabbing class object 
-
     External methods:
-        __call__: Search the database for available image(s).
-            Returns: Dict of catalog record(s) and Dask object(s) for the
-                area defined by bbox
-        search_catalog:
-            Returns a list of relevant records.
+        __call__: Grab most recent available images consistent with specs.
+        search_catalog: Find relevant image records.
 
-Notes on Attribute image_source:
-
-image_source is from ('WV', 'DG-Legacy', 'Landsat8'), and maybe eventually
-also 'TMS'. This refers both to a DG image class ('WV', 'DG-Legacy' ~
-CatalogImage, 'Landsat8' ~ LandsatImage, future 'TMS' ~ TmsImage), and in
-the case of  'WV', 'DG-Legacy', the assignment entails also assumptions
-about particular satellite  sensors expressed below in build_filters().
-If image_source is None, guess_resolution() is called to make a best
-guess based on bbox size and hard-coded SCALE parameters.  
-
-See below also for functions to convert distances to lat/lon, 
-to create bounding boxes given various inputs, and to write images to disk.
-
-Usage example:
+Usage:
 > bbox = geobox.bbox_from_scale(37.77, -122.42, 1.0)
 > g = DGImageGrabber(image_source='WV', pansharpen=True)
-> g(bbox, N_images=1, write_styles=['DRA'], file_header='SanFrancisco')
+> g(bbox, N_images=1, write_styles=['GeoTiff'], file_header='SanFrancisco')
+
+
+Catalog and image specs have defaults set in dg_default_specs.json, which,
+as of writing, takes form:
+{
+    "clouds": 10,   # maximum allowed percentage cloud cover
+    "offNadirAngle": null,   # (relation, angle), e.g. ('<', 10)
+    "startDate": "2008-09-01T00:00:00.0000Z",  # for catalog search
+    "endDate": null,  # for catalog search
+    "band_type": "MS",  # mulit-spectral
+    "pansharpen": false,
+    "acomp": false,
+    "proj": "EPSG:4326",
+    "image_source": null,  # see below
+    "min_intersect": 0.9,  # min fractional overlap between bbox and scene
+    "pansharp_scale": 2.0  # in km; used by guess_resolution(), which sets
+        pansharpen=True below this scale
+}
+            
+Notes on image_source:
+
+image_source is from ('WV', 'DG-Legacy'), and maybe eventually
+also 'TMS'. This refers both to a DG image class ('WV', 'DG-Legacy' ~
+CatalogImage, future 'TMS' ~ TmsImage), and in
+the case of  'WV', 'DG-Legacy', the assignment entails also assumptions
+about particular satellite sensors expressed below in _build_filters().
+If image_source is None, _guess_resolution() is called to make a best
+guess based on bbox size and specs['pansharp_scale'].
 
 """
 
-import numpy as np
+import datetime
+import json
+import os
+import subprocess
 import sys
 
-import gbdxtools
-from shapely import wkt
+import dateutil
 import matplotlib.pyplot as plt
+import numpy as np
+from shapely import wkt
+import tifffile
+import gbdxtools  # bug in geo libraries.  import this *after* shapely
 
-sys.path.append('../')
 from geobox import geobox
+from postprocessing import color
 
 # Default catalog and image parameters:
-CATALOG_PARAMS = {
-    'clouds': 10,   # max percentage allowed cloud cover
-    'offNadirAngle': None,  # (relation, angle), e.g. ('<', 10)
-    'startDate': '2008-09-01T00:00:00.0000Z',
-    'endDate': None
-}
-IMAGE_SPECS = {
-    'band_type': 'MS',
-    'pansharpen': False,
-    'acomp': True,
-    'proj': 'EPSG:4326'  # DG default
-    #TODO: orthorectification?
-}
-DEFAULT_PARAMS = CATALOG_PARAMS.copy()
-DEFAULT_PARAMS.update(IMAGE_SPECS)
+DEFAULT_SPECS_FILE = os.path.join(os.path.dirname(__file__),
+                                  'dg_default_specs.json')
+with open(DEFAULT_SPECS_FILE, 'r') as f:
+    DEFAULT_SPECS = json.load(f)
 
-# Image scale thresholds for guess_resolution(), width/height in km:
-SMALL_SCALE = 2.0
-MID_SCALE = 10.0 
-
+DEFAULT_SOURCE = 'WV'
 
 class DGImageGrabber(object):
     
     """Class DGImageGrabber: Tool to grab a DG image respecting given specs.
 
     Attributes:
-        image_source:  DG catalog source and sensor(s)
-        min_intersect: minimum percent area overlap of bbox & image
-        params: catalog search and image parameters
-        catalog_filters: catalog params in DG format
-        image_specs:  image parameters
-        grabber: DG image grabbing class object 
+        specs: dict of catalog and image specs (see above for format and
+           defaults)
 
     External methods:
-        __call__: Search the database for available image(s).
-            Returns: Dict of catalog record(s) and Dask object(s) for the
-                area defined by bbox, with options to write to disk.
-        search_catalog:
-            Returns a list of relevant records.
+        __call__: Grab most recent available images consistent with specs.
+        search_catalog:  Find relevant image records.
     """
 
-    def __init__(self, image_source=None, min_intersect=.9, **params):
-        self.image_source = image_source
-        self.min_intersect = min_intersect
-        self.params = DEFAULT_PARAMS.copy()
-        if params != {}:
-            self.params.update(params)
-        self.catalog_filters = self.build_filters()
-        self.image_specs = {
-            k:v for k,v in self.params.items() if k in IMAGE_SPECS.keys()
-        }
-        self.grabber = self.build_grabber()
+    def __init__(self, **specs):
+        self.specs = DEFAULT_SPECS.copy()
+        self.specs.update(specs)
+        self.specs = self._enforce_date_formatting(**self.specs)
 
     def __call__(self, bbox, N_images=2, write_styles=None, file_header=''):
-        """Grab most recent available images satifying instance parameters.
+        """Grab most recent available images consistent with specs.
 
         Arguments:
-            bbox: a possible new bbox to use in lieu of self.bbox
+            bbox: a shapely box
             N_images: number of images to retrieve
             write_styles: list of possible output image styles, from:
                 'DRA' (Dynamical Range Adjusted RGB PNG)
-                'Raw' (Raw RGB PNG)
+                'GeoTiff' 
             file_header: optional prefix for output image files
 
-        Returns: List of images (areas of interest) as Dask objects,
-            list of corresponding catalog records
+        Returns: List of images as Dask objects, list of catalog records,
+            and list of filenames of written images
         """
-        if self.image_source is None:
-            self.image_source, pansharpen = guess_resolution(bbox)
-            self.image_specs.update({'pansharpen': pansharpen})
+        specs = self.specs.copy()
+        if specs['image_source'] is None:
+            image_source, pansharpen = self._guess_resolution(bbox)
+            specs.update({
+                'image_source': image_source,
+                'pansharpen': pansharpen})
+
         lat, lon = bbox.centroid.y, bbox.centroid.x
-        records = self.search_catalog(lat, lon)
+        filters = self._build_filters(**specs)
+        records = self.search_catalog(lat, lon, filters, **specs)
         records_by_date = sorted(records,
                                 key=lambda t: t['properties']['timestamp'])
+        
         imgs, recs_retrieved = [], []
         while len(records_by_date) > 0 and len(imgs) < N_images:
             record = records_by_date.pop()
@@ -137,43 +125,50 @@ class DGImageGrabber(object):
                 record['properties']['sensorPlatformName']))
             print('Percent area intersecting bounding box: {:.2f}'.format(
                 intersect_frac))
-            if intersect_frac < self.min_intersect:
+            if intersect_frac < specs['min_intersect']:
                 continue
             else:
                 print('Trying...')
             try:
-                img = self.grabber(id, **self.image_specs)
+                img = gbdxtools.CatalogImage(id, **specs)
                 imgs.append(img.aoi(bbox=intersection.bounds))
                 recs_retrieved.append(record)
                 print('Retrieved ID {}'.format(id))
             except Exception as e:
                 print('Exception: {}'.format(e))
                 pass
-        print('Found {} images of {} requested.'.format(len(imgs),
-                                                        N_images))
+        print('Found {} images of {} requested.'.format(len(imgs), N_images))
+        
         if len(imgs) > 0 and write_styles is not None:
-            filenames = build_filenames(bbox, recs_retrieved, file_header)
+            filenames = _build_filenames(bbox, recs_retrieved, file_header)
+            written_fnames = []
             for img, filename in zip(imgs, filenames):
                 for style in write_styles:
-                    self.write_img(img, filename, style=style)
-        # reset initialized value
-        self.image_specs.update({'pansharpen': self.params['pansharpen']})
-        return imgs, recs_retrieved
-        
-    def build_filters(self):
+                    write_name = self._write_img(img, filename, style)
+                    written_fnames.append(write_name)
+
+        return imgs, recs_retrieved, written_fnames
+
+    def search_catalog(self, lat, lon, filters, **specs):
+        """Search the DG catalog for relevant imagery."""
+        cat = gbdxtools.catalog.Catalog()
+        records = cat.search_point(lat, lon,
+                                   filters=filters,
+                                   startDate=specs['startDate'],
+                                   endDate=specs['endDate'])
+        return records
+    
+    def _build_filters(self, **specs):
         """Build filters to search DG catalog."""
         filters = []
-        if self.params['clouds'] is not None:
-            cloudcover = 'cloudCover < {:d}'.format(
-                int(self.params['clouds']))
+        if specs['clouds']:
+            cloudcover = 'cloudCover < {:d}'.format(int(specs['clouds']))
             filters.append(cloudcover)
-        if self.params['offNadirAngle'] is not None:
-            relation, angle = params['offNadirAngle']
+        if specs['offNadirAngle']:
+            relation, angle = specs['offNadirAngle']
             offNadir = 'offNadirAngle {} {}'.format(relation, angle)
             filters.append(offNadir)
-        if self.image_source == 'Landsat8':
-            sensors = "(sensorPlatformName = 'LANDSAT08')"
-        elif self.image_source == 'DG-Legacy':
+        if specs['image_source'] == 'DG-Legacy':
             sensors = ("(sensorPlatformName = 'QUICKBIRD02' OR " +
                     "sensorPlatformName = 'IKONOS')")
         else:
@@ -182,109 +177,76 @@ class DGImageGrabber(object):
                     "sensorPlatformName = 'GEOEYE01')")
         filters.append(sensors)
         return filters
-        
-    def build_grabber(self):
-        """Return an appropriate DG image_class object."""
-        if self.image_source == 'Landsat8':
-            grabber = gbdxtools.LandsatImage           
-        else:
-            grabber = gbdxtools.CatalogImage
-        return grabber
-            
-    def search_catalog(self, lat, lon):
-        """Search the DG catalog for relevant imagery."""
-        cat = gbdxtools.catalog.Catalog()
-        records = cat.search_point(
-            lat, lon,
-            filters=self.catalog_filters,
-            startDate=self.params['startDate'],
-            endDate=self.params['endDate'])
-        return records
 
-    def write_img(self, img, filename, style='DRA'):
+    def _write_img(self, img, filename, style):
         """Write a DG dask image to file with given filename.
                               
-        Input style: 'DRA' or 'Raw' 
+        Argument style: 'DRA' or 'GeoTiff' 
         """
-        if style == 'DRA':
+        if style.lower() == 'dra':
             rgb = img.rgb()
-        elif style == 'Raw':
-            multispec = img.read()
-            num_bands, rows, cols = multispec.shape
-            rgb = np.zeros((rows, cols, 3))
-            # Guesses based on typical DG band structures:
-            if num_bands == 4:
-                bands = [2, 1, 0]
-            elif num_bands == 8:
-                bands = [4, 2, 1]
-            else:
-                print('{}-band format not recognized. '.format(bands) +
-                          'No file written.\n')
-                return
-            for n, b in enumerate(bands):
-                rgb[:,:,n] = multispec[b,:,:]
-            # TODO: Currently it seems like the bulk (say at 95% cutoff)
-            # of the multispectral histograms fall in 12-bit range,
-            # though WV2,3 datasheets specificy 11-bits.
-            # Assume 2**12 = 4096 as max value and reset outliers to 1.0.
-            PIXEL_MAX = 4096
-            print('\nRescaling raw pixel values assuming a {}-bit '.format(
-                int(np.log2(PIXEL_MAX))) + 'range. Clipping outliers.')
-            ninetyfifth = np.percentile(rgb, 95)
-            print('95th percentile of the image histogram ' +
-                      'has pixel value {}. '.format(int(ninetyfifth)) +
-                      'Cutting histogram at value {}.'.format(PIXEL_MAX))
-            rgb = rgb/PIXEL_MAX
-            rgb[np.where(rgb > 1)] = 1.0
-        filename += style + '.png'
-        print('\nSaving to {}\n'.format(filename))
-        plt.imsave(filename, rgb)
-        return
-    
-# TODO: Figure out DG img.geotiff method and add support to the above.
-# (currently the method returns good geotiff headers but uint16 tifs
-# with all values very close to zero).  A la: 
-"""
-        elif style == 'geotiff':
-            bands = ms.shape[0]
-            outfile = outfile + '.tif'
-            # Guesses based on typical DG band structures:
-            if bands == 4:
-                ms.geotiff(path=outfile, proj=self.proj, bands=[2,1,0])
-            elif bands == 8:
-                ms.geotiff(path=outfile, proj=self.proj, bands=[4,2,1])
-            else:
-                print('{}-band format not recognized.'.format(bands) +
-                        ' No file written.\n')
-"""
+            filename += 'DRA.png'
+            print('\nSaving to {}\n'.format(filename))
+            plt.imsave(filename, rgb)
         
-def build_filenames(bbox, records, file_header=''):
+        elif style.lower() == 'geotiff':
+            bands = img.shape[0]
+            filename += '.tif'
+            print('\nSaving to {}\n'.format(filename))
+            if bands == 4:
+                img.geotiff(path=filename,
+                            proj=self.specs['proj'],
+                            bands=[2,1,0])
+            elif bands == 8:
+                img.geotiff(path=filename,
+                            proj=self.specs['proj'],
+                            bands=[4,2,1])
+            else:
+                print('Image file format not recognized. No image written.\n')
+                return None
+
+        else:
+            print('Write style must be DRA or GeoTiff. No image written.\n')
+            return None
+        
+        return filename
+
+    def _guess_resolution(self, bbox):
+        """Guess a resolution given bbox.
+
+        Returns: DEFAULT_SOURCE and a proposal for pansharpening
+        """
+        size = np.max(geobox.get_side_distances(bbox))
+        pansharpen = True if size <= self.specs['pansharp_scale'] else False
+        return DEFAULT_SOURCE, pansharpen
+
+    def _enforce_date_formatting(self, **specs):
+        """Ensure dates are given in DG-required format.
+    
+        The required format is a string with separator 'T' and timezone
+            specifier Z: 'YYYY-MM-DDTHH:MM:SS.XXXXZ'
+        """
+        for date in ('startDate', 'endDate'):
+            if specs[date]: 
+                parsed = dateutil.parser.parse(specs[date])
+                formatted = parsed.isoformat(timespec='milliseconds')
+                formatted = formatted.split('+')[0] + 'Z'
+                specs[date] = formatted
+        return specs
+    
+def _build_filenames(bbox, records, file_header=''):
     """Build a filename for image output.
 
     Uses: catalog id and date, centroid lat/lon, and optional file_header
 
     Return: filename prefix, ready to append '.png', '.tif', etc.
     """
-    lon, lat = bbox.centroid.x, bbox.centroid.y
-    size = np.max(geobox.get_side_distances(bbox))
-    tags = ('_lat{:.4f}lon{:.4f}size{:.1f}km'.format(lat, lon, size))
+    tags = ('bbox{:.4f}_{:.4f}_{:.4f}_{:.4f}'.format(
+        *bbox.bounds))
     filenames = [(file_header + r['identifier'] + '_' +
                    r['properties']['timestamp'] + tags) for r in records]
     return filenames
-        
-def guess_resolution(bbox):
-    """Guess a resolution given bbox and SCALE parameters.
 
-    Returns: An image_source and a proposal for pansharpening
-    """
-    size = np.max(geobox.get_side_distances(bbox))
-    pansharpen = False
-    if size <= MID_SCALE:
-        image_source = 'WV'
-        if size <= SMALL_SCALE:
-            pansharpen = True
-    else:
-        image_source = 'DG-Legacy'
-    return image_source, pansharpen
+
 
 
