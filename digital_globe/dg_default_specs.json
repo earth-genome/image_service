@@ -1,0 +1,13 @@
+{
+    "clouds": 10,
+    "offNadirAngle": null,
+    "startDate": "2008-09-01T00:00:00.0000Z",
+    "endDate": null,
+    "band_type": "MS",
+    "pansharpen": false,
+    "acomp": false,
+    "proj": "EPSG:4326",
+    "image_source": null,
+    "pansharp_scale": 2.0,
+    "min_intersect": 0.9
+}
