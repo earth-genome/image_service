@@ -4,8 +4,7 @@ The main function call goes to BulkGrabber.pull_for_wire() in the
 auto_grabber module.
 
 Usage:
-> python pull_for_wire.py 
-    [-s image_specs.json] [-N N_images] [-h]
+> python pull_for_wire.py [-s image_specs.json] [-N N_images] [-h]
 
 More options can be accessed through the BulkGrabber class.
 """
@@ -21,7 +20,7 @@ if __name__ == '__main__':
         description='Pull images for stories from the wire.'
     )
     parser.add_argument(
-        '-s', '--image_specs_filename',
+        '-s', '--specs_filename',
         type=str,
         help=('Json-formatted file containing image specs. ' +
               'Format and defaults are specified in auto_grabber.py.')
@@ -34,7 +33,7 @@ if __name__ == '__main__':
             auto_grabber.DEFAULT_IMAGE_SPECS['N_images']))
     )
     kwargs = vars(parser.parse_args())
-    grabber = auto_grabber.BulkGrabber(bucket_name=WIRE_BUCKET, **kwargs)
+    grabber = auto_grabber.BulkGrabber(WIRE_BUCKET, **kwargs)
     grabber.pull_for_wire()
 
 

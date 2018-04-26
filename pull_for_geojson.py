@@ -4,7 +4,7 @@ The main function call goes to BulkGrabber.pull_for_geojson() in the
 auto_grabber module.
 
 Usage:
-> python pull_for_geojson.py geojsonfile.json [-b bucket_name]
+> python pull_for_geojson.py geojsonfile.json cloud-storage-bucket-name
     [-s image_specs.json] [-N N_images] [-h]
 
 """
@@ -20,11 +20,15 @@ if __name__ == '__main__':
     parser.add_argument(
         'features_filename',
         type=str,
-        help='File containing GeoJSON FeatureCollection {}'.format(
-            'filename.json')
+        help='Name of .json file containing GeoJSON FeatureCollection.'
     )
     parser.add_argument(
-        '-s', '--image_specs_filename',
+        'bucket_name',
+        type=str,
+        help='Name of existing cloud storage bucket.'
+    )
+    parser.add_argument(
+        '-s', '--specs_filename',
         type=str,
         help=('Json-formatted file containing image specs. ' +
               'Format and defaults are specified in auto_grabber.py.')
@@ -36,15 +40,10 @@ if __name__ == '__main__':
         help=('Number of images to pull, default: {}'.format(
             auto_grabber.DEFAULT_IMAGE_SPECS['N_images']))
     )
-    parser.add_argument(
-        '-b', '--bucket_name',
-        type=str,
-        help=('Cloud storage bucket name. If not given, images are stored ' +
-              'locally, as specified in auto_grabber.py.')
-    )
     kwargs = vars(parser.parse_args())
     features_filename = kwargs.pop('features_filename')
-    grabber = auto_grabber.BulkGrabber(**kwargs)
+    bucket_name = kwargs.pop('bucket_name')
+    grabber = auto_grabber.BulkGrabber(bucket_name, **kwargs)
     grabber.pull_for_geojson(features_filename)
 
             
