@@ -12,14 +12,22 @@ Class ColorCorrect:  Perform basic color correction on an image.
 
 Usage with default parameters:
 > cc = ColorCorrect()
-> corrected = cc.correct(image)
+> corrected = cc.correct_and_reduce(image)  (returns uint8)
+
+OR
+
+> corrected = cc.correct(image) (returns image with input dtype)
 
 Or if color will be corrected later by hand:
 > cc = ColorCorrect()
 > corrected = cc.brightness_and_contrast(image)
 
-Argument image:  numpy array of type 'uint8' or 'float32', with assumed
-    standard maximum values for images (255 for 'uint8', 1.0 for 'float32')
+Argument image:  numpy array of type uint16, uint8, or float32, with assumed
+    standard maximum values for images (65535, 255, or 1.0 respectively)
+
+Additional external function:
+    dg_coarse_adjust:  Convert to uint16 and do a rough histogram expansion.
+        (Ad hoc to DG to prepare DG geotiffs for correct() routines.) 
 
 Notes:
 
@@ -30,41 +38,48 @@ To balance colors, it is even more important to operate with reference to the me
 
 While _expand_histogram and _adjust_contrast can be reversed, roughly, by inverting the gamma transform and recompressing the histogram, the relative color blance cannot be reversed without knowing the initial color balance in the image, and therefore _balance_color should not be applied if color will be corrected later by hand.  This distinction is expressed in the difference between the correct() and brightness_and_contrast() methods.
 
+Images that arrive with uint16 range are manipulated as such, to preserve
+frequency resolution, with the option (via correct_and_reduce) to convert to
+uint8 for a lossy data compression at the end.  If conversion to uint8
+happens before histogram expansion, in particular, the image can be effectively
+posterized with only O(10) distinct values in a band.  
+
 """
 import numpy as np
 
 import matplotlib.pyplot as plt
-from skimage import color
+import skimage
 from skimage import exposure
+import tifffile
 
 class ColorCorrect(object):
     """Perform basic color correction on an image.
 
     Attributes:
         percentiles: high/low histogram reference points for determining
-            cutoffs; default: (1, 99)
-        color_percentile: high reference point for an individual color band;
-            default: 95
+            cutoffs
+        color_percentile: high reference point for an individual color band
         cut_frac: factor by which to shift reference pixel values before
-            applying cutoffs (see notes above); default: .75
-        gamma: gamma correction exponent; default: .75
+            applying cutoffs (see notes above)
+        gamma: gamma correction exponent
 
     External methods:
         brightness_and_contrast: Rescale intensities and enhance contrast.
         correct: Rescale intensities, enhance contrast, and balance colors.
+        __call__: Runs correct() and then returns a uint8 array.
 
     """
         
     def __init__(self,
                  percentiles=(1,99),
-                 color_percentile=95,
+                 color_percentiles=(5,95),
                  cut_frac=.75,
                  gamma=.75):
         self.percentiles = percentiles
-        self.color_percentile = color_percentile
+        self.color_percentiles = color_percentiles
         self.cut_frac = cut_frac
         self.gamma = gamma
-
+        
     def correct(self, img):
         """Rescale image intensities, enhance contrast, and balance colors."""
         print('Shifting white and black points.')
@@ -74,6 +89,14 @@ class ColorCorrect(object):
         print('Equalizing color bright points.')
         img = self._balance_colors(img)
         return img
+
+    def correct_and_reduce(self, img):
+        """Rescale image intensities, enhance contrast, and balance colors.
+
+        Returns: uint8 array
+        """
+        img = self.correct(img)
+        return skimage.img_as_ubyte(img)
 
     def brightness_and_contrast(self, img):
         """Rescale image intensities and enhance contrast."""
@@ -99,10 +122,12 @@ class ColorCorrect(object):
         """Shift reference value to max brightness for each color channel."""
         img_max = self._get_max(img)
         for n, band in enumerate(img.T):
-            highcut = np.percentile(band[np.where(band > 0)],
-                                    self.color_percentile)
+            lowcut, highcut = np.percentile(band[np.where(band > 0)],
+                                    self.color_percentiles)
             highcut = self._renorm_highcut(highcut, img_max)
-            img.T[n] = exposure.rescale_intensity(band, in_range=(0, highcut))
+            lowcut = self._renorm_lowcut(lowcut)
+            img.T[n] = exposure.rescale_intensity(band,
+                                                  in_range=(lowcut, highcut))
         return img
     
     def _renorm_lowcut(self, cut):
@@ -117,11 +142,32 @@ class ColorCorrect(object):
         return shifted
 
     def _get_max(self, img):
-        """Determine the maximum allowed pixel value for image."""
-        if img.dtype == 'uint8':
-            img_max = 255.
+        """Determine the maximum allowed pixel value for standard image."""
+        if img.dtype == 'uint16':
+            img_max = 65535
+        elif img.dtype == 'uint8':
+            img_max = 255
         elif img.dtype == 'float32':
             img_max = 1.0
         else:
-            raise TypeError("Image dtype 'uint8' or 'float32' expected.")
+            raise TypeError('Expecting dtype uint16, uint8 or float32.')
         return img_max
+
+    
+def coarse_adjust(img, cut_frac=.9):
+    """Convert to uint16 and do a rough histogram expansion.
+
+    As of April 2018, DigitalGlobe does not have their geotiffs in order.
+    The dtype kwarg to img.geotiff has no discernible effect. Sometimes
+    images come as float32 with a uint16-like value range, sometimes as uint16.
+    I have observed pixel values larger than 2**14, but not as of yet larger
+    than 2**16, and generally the histogram is concentrated in the first
+    twelve bits.  
+
+    Returns: unit16 array
+    """
+    img = img.astype('uint16')
+    cc = ColorCorrect(cut_frac=cut_frac)
+    expanded = cc._expand_histogram(img)
+    return expanded 
+    
