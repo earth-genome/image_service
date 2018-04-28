@@ -138,10 +138,10 @@ class DGImageGrabber(object):
                 print('Exception: {}'.format(e))
                 pass
         print('Found {} images of {} requested.'.format(len(imgs), N_images))
-        
+
+        written_fnames = []
         if len(imgs) > 0 and write_styles is not None:
             filenames = _build_filenames(bbox, recs_retrieved, file_header)
-            written_fnames = []
             for img, filename in zip(imgs, filenames):
                 for style in write_styles:
                     write_name = self._write_img(img, filename, style)
