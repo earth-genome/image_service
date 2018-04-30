@@ -1,0 +1,14 @@
+version: '2'
+services:
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - PL_API_KEY=1eefae7ddde24c5d8322dc62ba5c6c3a
+      - GBDX_USERNAME=ekboyda@gmail.com
+      - GBDX_PASSWORD=vrok8sd2K
+      - GBDX_CLIENT_ID=IZqbUp;;uH750OY4oWI2..gdsLftkwuQRc6u7Sh_
+      - GBDX_SECRET=P6jb8VLQd@Wvv?Cljw1bP95Wq;3SyEBf6k65TUnvLXEdi8m3s=e4TR:ty9p7XembGBNNMScn_R4lW0tdKb;m;gZARhujM7d:l@lDxLN5-Aae1IZUEH5HZwiT93R9sQzG
+    volumes:
+      - ./webapp:/opt/webapp

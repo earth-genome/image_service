@@ -1,0 +1,12 @@
+Flask
+gunicorn
+wsgiref
+requests
+watson-developer-cloud
+python-firebase
+numpy 
+shapely
+matplotlib
+gbdxtools
+google-cloud-storage
+scikit-image
