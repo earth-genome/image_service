@@ -100,7 +100,7 @@ with open(DEFAULT_IMAGE_SPECS_FILE, 'r') as f:
 STAGING_DIR = os.path.join(os.path.dirname(__file__), 'tmp-staging')
 
 # News wire
-STORY_SEEDS = firebaseio.DB(firebasio.FIREBASE_URL)
+STORY_SEEDS = firebaseio.DB(firebaseio.FIREBASE_URL)
 DB_CATEGORY = '/WTL'
 
 WIRE_START_DATE = (datetime.date.today()-datetime.timedelta(days=3)).isoformat()
