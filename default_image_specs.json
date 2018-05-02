@@ -6,5 +6,8 @@
     "bbox_rescaling": 2,
     "min_size": 0.5,
     "max_size": 10,
-    "N_images": 1
+    "N_images": 1,
+    "write_styles": [
+        "natural"
+    ]
 }
