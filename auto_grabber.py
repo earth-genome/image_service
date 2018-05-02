@@ -181,7 +181,7 @@ class AutoGrabber(object):
             if len(new_recs) < specs['N_images']:
                 break
             
-        print('Pulled {} image(s).\n'.format(len(records)))
+        print('Pulled {} scene(s).\n'.format(len(records)))
         
         for r in records:
             urls = []
@@ -195,6 +195,7 @@ class AutoGrabber(object):
                     print('Bucket error for {}: {}\n'.format(path, repr(e)))
                     self.logger.exception('Bucket error for {}'.format(path))
                 os.remove(path)
+            print('Uploaded images:\n{}\n'.format(urls))
             r.update({'urls': urls})
         
         return records
@@ -216,11 +217,11 @@ class AutoGrabber(object):
             core_locations[name].update({'images': records})
             image_records += records
                 
-        #story.record.update({'core_locations': core_locations})
-        #story_record = story.put_item()
-        #if not story_record:
-        #    self.logger.error('Posting image records to DB: {}\n'.format(
-        #        image_records))
+        story.record.update({'core_locations': core_locations})
+        story_record = STORY_SEEDS.put_item(story)
+        if not story_record:
+            self.logger.error('Posting image records to DB: {}\n'.format(
+                image_records))
                 
         return image_records
 
@@ -270,7 +271,7 @@ class BulkGrabber(AutoGrabber):
                          specs_filename=specs_filename,
                          **image_specs)
         log_dir = os.path.join(os.path.dirname(__file__), 'AutoGrabberLogs')
-        log_filename = ('AutoGrabber' + datetime.date.today().isoformat() +
+        log_filename = ('AutoGrabber' + datetime.datetime.now().isoformat() +
                             '.log')
         self.logger = log_utilities.build_logger(log_dir,
                                                  log_filename,
@@ -350,8 +351,7 @@ class BulkGrabber(AutoGrabber):
                     continue
             except KeyError:
                 continue
-            records = self.pull_for_story(s)
-            print('{}: \n{}'.format(s.idx, records))
+            image_records = self.pull_for_story(s)
         print('complete')
         return 
 
