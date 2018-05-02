@@ -29,6 +29,8 @@ Additional external function:
     dg_coarse_adjust:  Convert to uint16 and do a rough histogram expansion.
         (Ad hoc to DG to prepare DG geotiffs for correct() routines.) 
 
+Certain pre-set collections of tuneable parameters are given in STYLE_PARAMS.
+        
 Notes:
 
 These routines were developed through experience of adjusting Planet and
@@ -51,6 +53,21 @@ import matplotlib.pyplot as plt
 import skimage
 from skimage import exposure
 import tifffile
+
+STYLE_PARAMS = {
+    'natural': {
+        'percentiles': (1,99),
+        'color_percentiles': (5,95),
+        'cut_frac': .75,
+        'gamma': .75
+    },
+    'gloss': {
+        'percentiles': (1,99),
+        'color_percentiles': (5,95),
+        'cut_frac': .85,
+        'gamma': .75
+    }
+}
 
 class ColorCorrect(object):
     """Perform basic color correction on an image.

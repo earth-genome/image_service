@@ -31,7 +31,7 @@ as of writing, takes form:
     "min_intersect": 0.9,  # min fractional overlap between bbox and scene
     "image_source": 'WV',
     "pansharpen": null,
-    "pansharp_scale": 3.0  # in km; used by _check_highres(), which sets
+    "pansharp_scale": 2.5  # in km; used by _check_highres(), which sets
         pansharpen=True below this scale
 }
             
@@ -92,7 +92,11 @@ class DGImageGrabber(object):
         self.specs = _enforce_date_formatting(**self.specs)
         self.filters = self._build_filters(**self.specs)
 
-    def __call__(self, bbox, N_images=2, write_styles=None, file_header=''):
+    def __call__(self,
+                 bbox,
+                 N_images=2,
+                 write_styles=[],
+                 file_header=''):
         """Grab most recent available images consistent with specs.
 
         Arguments:
@@ -100,13 +104,14 @@ class DGImageGrabber(object):
             N_images: number of images to retrieve
             write_styles: list of possible output image styles, from:
                 'DRA' (Dynamical Range Adjusted RGB PNG)
-                'GeoTiff' 
+                color-corrected styles defined in postprocessing.color
+                (or if empty, a raw GeoTiff is written)
             file_header: optional prefix for output image files
 
         Returns: List of images as Dask objects, list of catalog records,
             and list of filenames of written images
         """
-        records = self.search_catalog(bbox)
+        records = self.search(bbox)[::-1]
         
         specs = self.specs.copy()
         if specs['pansharpen'] is None:
@@ -132,36 +137,47 @@ class DGImageGrabber(object):
         print('Found {} images of {} requested.'.format(len(imgs), N_images))
 
         recs_written = []
-        if len(imgs) > 0 and write_styles is not None:
-            prefixes = _build_filenames(bbox, recs_retrieved, file_header)
-            for img, rec, prefix in zip(imgs, recs_retrieved, prefixes):
-                for style in write_styles:
-                    path = write_img(img, prefix, style)
-                    cleaned = _clean_record(rec)
-                    cleaned.update({'path': path})
-                    recs_written.append(cleaned)
+        for img, rec in zip(imgs, recs_retrieved):
+            prefix = _build_filename(bbox, rec, file_header)
+            paths = write_img(img, prefix, write_styles)
+            cleaned = _clean_record(rec)
+            cleaned.update({'paths': paths})
+            recs_written.append(cleaned)
 
         return recs_written
     
-    def search_catalog(self, bbox):
+    def search(self, bbox):
+        """Search the DG catalog for relevant imagery."""
+        records = self.search_latlon(bbox.centroid.y, bbox.centroid.x)
+        print('Initial search found {} records.'.format(len(records))) 
+        records = [r for r in records if self._well_overlapped(bbox, r)]
+        return records
+
+    def search_latlon(self, lat, lon):
         """Search the DG catalog for relevant imagery."""
         cat = gbdxtools.catalog.Catalog()
-        records = cat.search_point(bbox.centroid.y, bbox.centroid.x,
+        records = cat.search_point(lat, lon,
                                    filters=self.filters,
                                    startDate=self.specs['startDate'],
                                    endDate=self.specs['endDate'])
-        print('Initial search found {} records.'.format(len(records))) 
-        records = [r for r in records if self._well_overlapped(bbox, r)]
-        records.sort(key=lambda r: r['properties']['timestamp'])
+        records.sort(key=lambda r: r['properties']['timestamp'], reverse=True)
         return records
 
-    def search_clean(self, bbox):
+    def search_clean(self, bbox, N_records=10):
         """Search the DG catalog for relevant imagery.
 
-        Returns: streamlined records, as defined in _clean_records
+        Returns: streamlined records, as defined in _clean_records()
         """
-        records = self.search_catalog(bbox)
-        return [_clean_record(r) for r in records]
+        records = self.search(bbox)
+        return [_clean_record(r) for r in records[:N_records]]
+
+    def search_latlon_clean(self, lat, lon, N_records=10):
+        """Search the DG catalog for relevant imagery.
+
+        Returns: streamlined records, as defined in _clean_records()
+        """
+        records = self.search_latlon(lat, lon)
+        return [_clean_record(r) for r in records[:N_records]]
     
     def _build_filters(self, **specs):
         """Build filters to search DG catalog."""
@@ -175,11 +191,11 @@ class DGImageGrabber(object):
             filters.append(offNadir)
         if specs['image_source'] == 'DG-Legacy':
             sensors = ("(sensorPlatformName = 'QUICKBIRD02' OR " +
-                    "sensorPlatformName = 'IKONOS')")
+                       "sensorPlatformName = 'IKONOS')")
         else:
             sensors = ("(sensorPlatformName = 'WORLDVIEW02' OR " +
-                    "sensorPlatformName = 'WORLDVIEW03_VNIR' OR " +
-                    "sensorPlatformName = 'GEOEYE01')")
+                       "sensorPlatformName = 'WORLDVIEW03_VNIR' OR " +
+                       "sensorPlatformName = 'GEOEYE01')")
         filters.append(sensors)
         return filters
 
@@ -203,38 +219,52 @@ class DGImageGrabber(object):
         return wo
 
     
-def write_img(img, file_prefix, style):
+def write_img(img, file_prefix, styles):
     """Write a DG dask image to file.
                               
-    Argument style: 'DRA' or 'GeoTiff' 
+    Argument styles: List of styles from 'DRA' or styles from
+        postprocessing.color.  If empty, a raw GeoTiff is written.
     """
-    if style.lower() == 'dra':
+    paths = []
+    styles = [style.lower() for style in styles]
+    
+    if 'dra' in styles:
         rgb = img.rgb()
         filename = file_prefix + 'DRA.png'
         print('\nSaving to {}\n'.format(filename))
         plt.imsave(filename, rgb)
-        
-    elif style.lower() == 'geotiff':
-        bands = img.shape[0]
-        filename = file_prefix + '.tif'
-        print('\nSaving to {}\n'.format(filename))
-        if bands == 4:
-            img.geotiff(path=filename,
-                        proj=DEFAULT_SPECS['proj'],
-                        bands=[2,1,0])
-        elif bands == 8:
-            img.geotiff(path=filename,
-                        proj=DEFAULT_SPECS['proj'],
-                        bands=[4,2,1])
-        else:
-            print('Image file format not recognized. No image written.\n')
-            return None
+        paths.append(filename)
+        styles.remove('dra')
+        if not styles:
+            return paths
 
+    # grab the raw geotiff
+    bands = img.shape[0]
+    tifname = file_prefix + '.tif'
+    print('\nStaging at {}\n'.format(tifname))
+    if bands == 4:
+        img.geotiff(path=tifname, proj=DEFAULT_SPECS['proj'], bands=[2,1,0])
+    elif bands == 8:
+        img.geotiff(path=tifname, proj=DEFAULT_SPECS['proj'], bands=[4,2,1])
+
+    # possibilities that ask for color correction
+    rough_img = color.coarse_adjust(tifffile.imread(tifname))
+    for style in styles:
+        if style in color.STYLE_PARAMS.keys():
+            cc = color.ColorCorrect(**color.STYLE_PARAMS[style])
+            corrected = cc.correct_and_reduce(rough_img)
+            filename = tifname.split('.tif')[0] + '-' + style + '.png'
+            print('\nSaving to {}\n'.format(filename))
+            plt.imsave(filename, corrected)
+            paths.append(filename)
+
+    # if no other styles, keep the raw geotiff
+    if paths:
+        os.remove(tifname)
     else:
-        print('Write style must be DRA or GeoTiff. No image written.\n')
-        return None
-        
-    return filename
+        paths.append(tifname)  
+    
+    return paths
 
 
 # DG-specific formatting functions
@@ -255,11 +285,19 @@ def _enforce_date_formatting(**specs):
 
 def _clean_record(record):
     """Streamline DG image record."""
-    goodtags = ['catalogID', 'cloudCover', 'sensorPlatformName',
-                'timestamp', 'vendor', 'browseURL']
-    return {k:v for k,v in record['properties'].items() if k in goodtags}
+    keymap = {  # maps DG record keys to our standardized nomenclature
+        'vendor': 'provider',
+        'sensorPlatformName': 'sensor',
+        'catalogID': 'catalogID',
+        'timestamp': 'timestamp',
+        'cloudCover': 'clouds',
+        'browseURL': 'thumbnail'
+    }
+    cleaned = {keymap[k]:v for k,v in record['properties'].items()
+               if k in keymap.keys()}
+    return cleaned   
     
-def _build_filenames(bbox, records, file_header=''):
+def _build_filename(bbox, record, file_header=''):
     """Build a filename for image output.
 
     Uses: catalog id and date, centroid lat/lon, and optional file_header
@@ -268,9 +306,9 @@ def _build_filenames(bbox, records, file_header=''):
     """
     tags = ('bbox{:.4f}_{:.4f}_{:.4f}_{:.4f}'.format(
         *bbox.bounds))
-    filenames = [(file_header + r['identifier'] + '_' +
-                   r['properties']['timestamp'] + tags) for r in records]
-    return filenames
+    filename = (file_header + record['identifier'] + '_' +
+                record['properties']['timestamp'] + tags)
+    return filename
 
 
 
