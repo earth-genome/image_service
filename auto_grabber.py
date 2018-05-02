@@ -3,23 +3,23 @@
 Usage:
 
 To pull for a GeoJSON FeatureCollection:
-bg = BulkGrabber(bucket_name, specs_filename='specs.json', **more_image_specs)
-updated_feature_collection = bg.pull_for_geojson(features_filename)
+> bg = BulkGrabber(bucket_name, specs_filename='specs.json', **more_image_specs)
+> updated_feature_collection = bg.pull_for_geojson(features_filename)
 
 (The FeatureCollection itself may contain image_specs which will override those
 initialized.)  
 
 To pull for the news wire:
-bg = BulkGrabber(WIRE_BUCKET, specs_filename='specs.json', **more_image_specs)
-bg.pull_for_wire()
+> bg = BulkGrabber(WIRE_BUCKET, specs_filename='specs.json', **more_image_specs)
+> bg.pull_for_wire()
 
 To pull for a single DBItem story:
-ag = AutoGrabber(bucket_name, specs_filename='specs.json', **more_image_specs)
-records = ag.pull_for_story(story, **override_image_specs)
+> ag = AutoGrabber(bucket_name, specs_filename='specs.json', **more_image_specs)
+> records = ag.pull_for_story(story, **override_image_specs)
 
 To pull for a shapely bbox:
-ag = AutoGrabber(bucket_name, specs_filename='specs.json', **more_image_specs)
-records = ag.pull(bbox, **override_image_specs)
+> ag = AutoGrabber(bucket_name, specs_filename='specs.json', **more_image_specs)
+> records = ag.pull(bbox, **override_image_specs)
 
 See pull_for_wire.py and pull_for_geojson.py for command-line wrappers.
 
@@ -48,7 +48,9 @@ the launch date of GeoEye-1.)
 Additional kwargs corresponding to specs for individual grabbers may be passed
 in the same way. (The parameters above in default_image_specs have nomenclature
 common to all providers; other specs should have names *unique* to a given
-provider.)
+provider to avoid unintended consequences of passing, e.g. a Planet
+spec to a DG call.  See, e.g. digital_globe/dg_default_specs.json for
+DG-specific parameters, such as image_source (='WV' by default).)
 
 Outputs:
 
