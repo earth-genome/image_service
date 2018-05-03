@@ -103,7 +103,7 @@ class ColorCorrect(object):
         img = self._expand_histogram(img)
         print('Adjusting contrast.')
         img = self._adjust_contrast(img)
-        print('Equalizing color bright points.')
+        print('Balancing color bright and dark points.')
         img = self._balance_colors(img)
         return img
 
