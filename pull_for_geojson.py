@@ -10,8 +10,10 @@ Usage:
 """
 
 import argparse
+import sys
 
-import auto_grabber
+sys.path.append('../')
+from grab_imagery import auto_grabber
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(

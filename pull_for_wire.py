@@ -10,8 +10,10 @@ More options can be accessed through the BulkGrabber class.
 """
 
 import argparse
+import sys
 
-import auto_grabber
+sys.path.append('../')
+from grab_imagery import auto_grabber
 
 WIRE_BUCKET = 'newswire-images'
 
