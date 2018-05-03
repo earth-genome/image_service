@@ -5,6 +5,7 @@ services:
     ports:
       - "5000:5000"
     environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/opt/webapp/.google_config.json
       - PL_API_KEY=1eefae7ddde24c5d8322dc62ba5c6c3a
       - GBDX_USERNAME=ekboyda@gmail.com
       - GBDX_PASSWORD=vrok8sd2K
