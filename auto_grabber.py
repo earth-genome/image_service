@@ -133,7 +133,8 @@ class AutoGrabber(object):
         self.providers = {k:v for k,v in PROVIDERS.items()
                           if k in provider_names}
         if not self.providers:
-            raise ValueError('Available providers: {}'.format(PROVIDERS.keys()))
+            raise ValueError('Available providers: {}'.format(
+                list(PROVIDERS.keys())))
         
         self.staging_dir = staging_dir
         if not os.path.exists(self.staging_dir):
