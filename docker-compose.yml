@@ -13,3 +13,4 @@ services:
       - GBDX_SECRET=P6jb8VLQd@Wvv?Cljw1bP95Wq;3SyEBf6k65TUnvLXEdi8m3s=e4TR:ty9p7XembGBNNMScn_R4lW0tdKb;m;gZARhujM7d:l@lDxLN5-Aae1IZUEH5HZwiT93R9sQzG
     volumes:
       - ./webapp:/opt/webapp
+    tty: true
