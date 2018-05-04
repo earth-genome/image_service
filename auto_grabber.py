@@ -74,11 +74,11 @@ import numpy as np
 from shapely import geometry
 
 from grab_imagery import cloud_storage
+from grab_imagery import firebaseio
+from grab_imagery import log_utilities
 from grab_imagery.digital_globe import dg_grabber
 from grab_imagery.geobox import geobox
 from grab_imagery.geobox import conversions
-from grab_imagery.story_seeds import firebaseio
-from grab_imagery.story_seeds import log_utilities
 
 PROVIDERS = {
     'digital_globe': {
