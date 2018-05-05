@@ -26,28 +26,32 @@ Argument image:  numpy array of type uint16, uint8, or float32, with assumed
     standard maximum values for images (65535, 255, or 1.0 respectively)
 
 Additional external function:
-    dg_coarse_adjust:  Convert to uint16 and do a rough histogram expansion.
-        (Ad hoc to DG to prepare DG geotiffs for correct() routines.) 
+    coarse_adjust:  Convert to uint16 and do a rough histogram expansion.
+        (Ad hoc to DG to prepare DG geotiffs for ColorCorrect routines.) 
 
 Certain pre-set collections of tuneable parameters are given in STYLE_PARAMS.
         
 Notes:
 
-These routines were developed through experience of adjusting Planet and
-Landsat imagery by hand, using GIMP color curves. Scaling bright / dark points directly to percentiles on the image histogram leads to either (a) adjustments that tend toward posterization; or (b) adjustments based on histogram tails.  Therefore, the strategy is to find the (by default) (1, 99) percentiles as initial reference points and then step back by factor cut_frac.  I.e. instead of scaling the 1st percentile of the histogram to black, we find the pixel value of the first percentile, mutiply that value by cut_frac, and rescale the resulting pixel value to black. For one thing, this prevents over-saturating the image if there are no true blacks or whites in the scene.  
+These routines were developed through experience of adjusting Planet, DigitalGlobe, and Landsat imagery by hand, using GIMP color curves. Scaling bright / dark points directly to percentiles on the image histogram leads to either (a) adjustments that tend toward posterization; or (b) adjustments based on histogram tails.  Therefore, the strategy is to find the (by default) (1, 99) percentiles as initial reference points and then step back by factor cut_frac.  I.e. instead of scaling the 1st percentile of the histogram to black, we find the pixel value of the first percentile, mutiply that value by cut_frac, and rescale the resulting pixel value to black. For one thing, this prevents over-saturating the image if there are no true blacks or whites in the scene.  
 
-To balance colors, it is even more important to operate with reference to the meat of the histogram, not out at the tail. Suppose red is relatively dark as compared to blue, but red has a longer bright tail.  A modest cut at the 99.9th percentile may end up brightening blue more than red.  Therefore, by default, we take the 95th percentile as initial reference and again step back by cut_frac.
+To balance colors, it is important to operate with reference to the meat of the histogram, not out at the tail. Suppose red is relatively dark as compared to blue, but red has a longer bright tail.  A modest cut at the 99.9th percentile may end up brightening blue more than red.  Therefore, by default, we take the 95th percentile as initial reference and again step back by cut_frac.
 
-While _expand_histogram and _adjust_contrast can be reversed, roughly, by inverting the gamma transform and recompressing the histogram, the relative color blance cannot be reversed without knowing the initial color balance in the image, and therefore _balance_color should not be applied if color will be corrected later by hand.  This distinction is expressed in the difference between the correct() and brightness_and_contrast() methods.
+Colors need to be balanced first, because gamma adjustment exacerbates color imbalance, and likewise, white/black point shift can cutoff one color histogram if it lies outside the other two.  (I.e. if red has lower values than green or blue, a black point adjustment can drive the red all the way to zero, because percentiles are taken from the three bands aggregated.)  Doing white/black point adjustment as a final step, the percentile should be (1,99), not (5,95), because the histograms will typically have long tails from earlier expansion.
+
+While _expand_histogram and _adjust_contrast can be inverted, roughly, by inverting the gamma transform and recompressing the histogram, the relative color blance cannot be reversed without knowing the initial color balance in the image, and therefore one may not want to apply _balance_color if color will be corrected later by hand.  This distinction is expressed in the difference between the correct() and brightness_and_contrast() methods.
 
 Images that arrive with uint16 range are manipulated as such, to preserve
 frequency resolution, with the option (via correct_and_reduce) to convert to
 uint8 for a lossy data compression at the end.  If conversion to uint8
 happens before histogram expansion, in particular, the image can be effectively
-posterized with only O(10) distinct values in a band.  
+posterized with only O(10) distinct values in a band.
+
+Given the above, the percentiles should be fixed and are written as such into the __init__ function.  The tuneable parameters are the cut_frac and gamma.  Some reasonable examples are given in STYLE_PARAMS below.  For the same numerical variation from these values, cut_frac has a larger impact on contrast than gamma. Larger cut_frac means higher contrast, and typically should be set off with higher gamma (lessens the gamma effect), and vice-versa.   
 
 """
 import numpy as np
+import sys
 
 import matplotlib.pyplot as plt
 import skimage
@@ -56,16 +60,16 @@ import tifffile
 
 STYLE_PARAMS = {
     'natural': {
-        'percentiles': (1,99),
-        'color_percentiles': (5,95),
         'cut_frac': .75,
         'gamma': .75
     },
-    'gloss': {
-        'percentiles': (1,99),
-        'color_percentiles': (5,95),
+    'matte': {
+        'cut_frac': .65,
+        'gamma': .3
+    },
+    'high_contrast': {
         'cut_frac': .85,
-        'gamma': .75
+        'gamma': .85
     }
 }
 
@@ -87,24 +91,20 @@ class ColorCorrect(object):
 
     """
         
-    def __init__(self,
-                 percentiles=(1,99),
-                 color_percentiles=(5,95),
-                 cut_frac=.75,
-                 gamma=.75):
-        self.percentiles = percentiles
-        self.color_percentiles = color_percentiles
+    def __init__(self, cut_frac=.75, gamma=.75):
+        self.percentiles = (1,99)
+        self.color_percentiles = (5,95)
         self.cut_frac = cut_frac
         self.gamma = gamma
         
     def correct(self, img):
         """Rescale image intensities, enhance contrast, and balance colors."""
-        print('Shifting white and black points.')
-        img = self._expand_histogram(img)
-        print('Adjusting contrast.')
-        img = self._adjust_contrast(img)
         print('Balancing color bright and dark points.')
         img = self._balance_colors(img)
+        print('Adjusting contrast.')
+        img = self._adjust_contrast(img)
+        print('Shifting white and black points.')
+        img = self._expand_histogram(img)
         return img
 
     def correct_and_reduce(self, img):
@@ -117,54 +117,65 @@ class ColorCorrect(object):
 
     def brightness_and_contrast(self, img):
         """Rescale image intensities and enhance contrast."""
-        img = self._expand_histogram(img)
         img = self._adjust_contrast(img)
+        img = self._expand_histogram(img)
         return img
 
     def _expand_histogram(self, img):
         """Expand histogram reference values to white and black."""
-        img_max = self._get_max(img)
         lowcut, highcut = np.percentile(img[np.where(img > 0)],
                                         self.percentiles)
+        highcut = self._renorm_highcut(highcut, img.dtype)
         lowcut = self._renorm_lowcut(lowcut)
-        highcut = self._renorm_highcut(highcut, img_max)
         expanded = exposure.rescale_intensity(img, in_range=(lowcut, highcut))
         return expanded
 
+    def _shift_white_pt(self, img):
+        cut = np.percentile(img[np.where(img > 0)], self.percentiles[1])
+        cut = self._renorm_highcut(cut, img.dtype)
+        expanded = exposure.rescale_intensity(img, in_range=(0, cut))
+        return expanded
+
+    def _shift_black_pt(self, img):
+        cut = np.percentile(img[np.where(img > 0)], self.percentiles[0])
+        cut = self._renorm_lowcut(cut)
+        expanded = exposure.rescale_intensity(
+            img, in_range=(cut, self._get_max(img)))
+        return expanded
+    
     def _adjust_contrast(self, img):
         """Peform gamma adjustment."""
         return exposure.adjust_gamma(img, gamma=self.gamma)
 
     def _balance_colors(self, img):
         """Shift reference value to max brightness for each color channel."""
-        img_max = self._get_max(img)
+        balanced = np.zeros(img.shape, dtype=img.dtype)
         for n, band in enumerate(img.T):
             lowcut, highcut = np.percentile(band[np.where(band > 0)],
-                                    self.color_percentiles)
-            highcut = self._renorm_highcut(highcut, img_max)
+                                            self.color_percentiles)
+            highcut = self._renorm_highcut(highcut, img.dtype)
             lowcut = self._renorm_lowcut(lowcut)
-            img.T[n] = exposure.rescale_intensity(band,
-                                                  in_range=(lowcut, highcut))
-        return img
+            balanced.T[n] = exposure.rescale_intensity(
+                band, in_range=(lowcut, highcut))
+        return balanced
     
     def _renorm_lowcut(self, cut):
         """Shift cut toward zero."""
         return cut * self.cut_frac
 
-    def _renorm_highcut(self, cut, img_max):
+    def _renorm_highcut(self, cut, datatype):
         """Shift cut toward img_max."""
+        img_max = self._get_max(datatype)
         shifted = img_max - self.cut_frac * (img_max - cut)
-        if img_max == 255.:
-            shifted = round(shifted)
         return shifted
 
-    def _get_max(self, img):
+    def _get_max(self, datatype):
         """Determine the maximum allowed pixel value for standard image."""
-        if img.dtype == 'uint16':
+        if datatype == 'uint16':
             img_max = 65535
-        elif img.dtype == 'uint8':
+        elif datatype == 'uint8':
             img_max = 255
-        elif img.dtype == 'float32':
+        elif datatype == 'float32':
             img_max = 1.0
         else:
             raise TypeError('Expecting dtype uint16, uint8 or float32.')
@@ -179,12 +190,27 @@ def coarse_adjust(img, cut_frac=.9):
     images come as float32 with a uint16-like value range, sometimes as uint16.
     I have observed pixel values larger than 2**14, but not as of yet larger
     than 2**16, and generally the histogram is concentrated in the first
-    twelve bits.  
+    twelve bits.  This function is not required but allows ColorCorrect() to
+    be applied to DigitalGlobe images with the same parameters as for Planet.
 
     Returns: unit16 array
     """
     img = img.astype('uint16')
     cc = ColorCorrect(cut_frac=cut_frac)
-    expanded = cc._expand_histogram(img)
+    expanded = cc._shift_white_pt(img)
     return expanded 
-    
+
+if __name__ == '__main__':
+    usage_msg = ('Usage: python color.py image.tif [-c]\n' +
+                 'The -c flag indicates a preliminary coarse adjust for ' +
+                 'DigitalGlobe GeoTiffs.  The flag must follow the filename.')
+    try:
+        filename = sys.argv[1]
+        img = tifffile.imread(sys.argv[1])
+    except (IndexError, FileNotFoundError) as e:
+        sys.exit('{}\n{}'.format(repr(e), usage_msg))
+    if '-c' in sys.argv:
+        img = coarse_adjust(img)
+    cc = ColorCorrect()
+    corrected = cc.correct_and_reduce(img)
+    plt.imsave(filename.split('.')[0] + '.png', corrected)
