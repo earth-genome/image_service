@@ -9,6 +9,6 @@
     "N_images": 1,
     "write_styles": [
         "natural",
-	"high-contrast"
+	"high_contrast"
     ]
 }
