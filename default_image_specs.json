@@ -8,6 +8,7 @@
     "max_size": 10,
     "N_images": 1,
     "write_styles": [
-        "natural"
+        "natural",
+	"high-contrast"
     ]
 }
