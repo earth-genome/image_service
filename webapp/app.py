@@ -79,7 +79,8 @@ def pull():
         if provider != 'digital_globe':
             raise ValueError('Currently only supporting digital_globe.\n' +
                              '{}'.format(usage_msg))
-        
+
+    specs.update({'bbox_rescaling': 1})
     bbox = auto_grabber.geobox.square_bbox_from_scale(lat, lon, scale)
     grabber = auto_grabber.AutoGrabber('bespoke-images', **specs)
     records = grabber.pull(bbox)
