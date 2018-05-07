@@ -23,13 +23,19 @@ Or if color will be corrected later by hand:
 > corrected = cc.brightness_and_contrast(image)
 
 Argument image:  numpy array of type uint16, uint8, or float32, with assumed
-    standard maximum values for images (65535, 255, or 1.0 respectively)
+    standard maximum values for images (65535, 255, or 1.0 respectively) 
 
 Additional external function:
     coarse_adjust:  Convert to uint16 and do a rough histogram expansion.
-        (Ad hoc to DG to prepare DG geotiffs for ColorCorrect routines.) 
+        (Ad hoc to DG to prepare DG geotiffs for ColorCorrect routines.)
 
 Certain pre-set collections of tuneable parameters are given in STYLE_PARAMS.
+
+Usage from main, for Planet:
+> python color.py planetimg.tif
+
+Usage from main, for DG (-c flag coarse corrects and ensures proper dtype)
+> python color.py dgimg.tif -c 
         
 Notes:
 
@@ -59,17 +65,17 @@ from skimage import exposure
 import tifffile
 
 STYLE_PARAMS = {
+    'matte': {
+        'cut_frac': .6,
+        'gamma': .6
+    },
     'natural': {
         'cut_frac': .75,
-        'gamma': .75
-    },
-    'matte': {
-        'cut_frac': .65,
-        'gamma': .3
+        'gamma': .675
     },
     'high_contrast': {
-        'cut_frac': .85,
-        'gamma': .85
+        'cut_frac': .9,
+        'gamma': .75
     }
 }
 
@@ -211,6 +217,8 @@ if __name__ == '__main__':
         sys.exit('{}\n{}'.format(repr(e), usage_msg))
     if '-c' in sys.argv:
         img = coarse_adjust(img)
-    cc = ColorCorrect()
-    corrected = cc.correct_and_reduce(img)
-    plt.imsave(filename.split('.')[0] + '.png', corrected)
+    for style, params in STYLE_PARAMS.items():
+        cc = ColorCorrect(**params)
+        corrected = cc.correct_and_reduce(img)
+        #plt.imsave(filename.split('.')[0] + '-{}.png'.format(style), corrected)
+        plt.imsave(filename.split('.')[0] + 'cf{}g{}.png'.format(params['cut_frac'], params['gamma']), corrected)
