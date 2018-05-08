@@ -98,8 +98,8 @@ class ColorCorrect(object):
     """
         
     def __init__(self, cut_frac=.75, gamma=.75):
-        self.percentiles = (1,99)
-        self.color_percentiles = (5,95)
+        self.percentiles = (2, 98)
+        self.color_percentiles = (5, 95)
         self.cut_frac = cut_frac
         self.gamma = gamma
         
@@ -188,23 +188,28 @@ class ColorCorrect(object):
         return img_max
 
     
-def coarse_adjust(img, cut_frac=.9):
-    """Convert to uint16 and do a rough histogram expansion.
+def coarse_adjust(img):
+    """Convert to uint16 and do a rough bandwise histogram expansion.
 
     As of April 2018, DigitalGlobe does not have their geotiffs in order.
     The dtype kwarg to img.geotiff has no discernible effect. Sometimes
     images come as float32 with a uint16-like value range, sometimes as uint16.
     I have observed pixel values larger than 2**14, but not as of yet larger
     than 2**16, and generally the histogram is concentrated in the first
-    twelve bits.  This function is not required but allows ColorCorrect() to
+    twelve bits. Relative color magnitudes are not reliable.
+    This function finds the pixel value for the 99th percentile
+    for each band and resets that to 1e4.  It allows ColorCorrect() to
     be applied to DigitalGlobe images with the same parameters as for Planet.
 
     Returns: unit16 array
     """
-    img = img.astype('uint16')
-    cc = ColorCorrect(cut_frac=cut_frac)
-    expanded = cc._shift_white_pt(img)
-    return expanded 
+    percentile = 99
+    target_value = 1e4
+    coarsed = np.zeros(img.shape, dtype='uint16')
+    for n, band in enumerate(img.T):
+        cut = np.percentile(band[np.where(band > 0)], percentile)
+        coarsed.T[n] = ((band / cut) * target_value).astype('uint16')
+    return coarsed 
 
 if __name__ == '__main__':
     usage_msg = ('Usage: python color.py image.tif [-c]\n' +
@@ -221,4 +226,5 @@ if __name__ == '__main__':
         cc = ColorCorrect(**params)
         corrected = cc.correct_and_reduce(img)
         #plt.imsave(filename.split('.')[0] + '-{}.png'.format(style), corrected)
-        plt.imsave(filename.split('.')[0] + 'cf{}g{}.png'.format(params['cut_frac'], params['gamma']), corrected)
+        plt.imsave(filename.split('.')[0] + 'cf{}g{}.png'.format(
+            params['cut_frac'], params['gamma']), corrected)
