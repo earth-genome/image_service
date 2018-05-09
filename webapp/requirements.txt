@@ -1,12 +1,13 @@
 Flask
 gunicorn
-wsgiref
 requests
 watson-developer-cloud
 python-firebase
-numpy 
+numpy
+rasterio
 shapely
 matplotlib
+tifffile
 gbdxtools
 google-cloud-storage
 scikit-image
