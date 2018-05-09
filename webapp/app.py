@@ -24,6 +24,10 @@ BUCKET = 'bespoke-images'
 
 app = Flask(__name__)
 
+@app.route('/')
+def usage():
+    return 'Help messages to come.'
+
 @app.route('/search')
 def search():
     """Search image availability for give lat, lon."""
