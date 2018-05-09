@@ -26,7 +26,15 @@ app = Flask(__name__)
 
 @app.route('/')
 def usage():
-    return 'Help messages to come.'
+    usage_msg = ('Example usage: '+
+                 'http://earthrise-assets.herokuapp.com/search?' +
+                 'provider=digital_globe' +  
+                 '&lat=37.7749&lon=-122.4194' +
+                 '&start=2018-01-01&end=2018-05-02' +
+                 '&clouds=10&N=5\nLat, lon are required.\n'
+                 'Alternate endpoints to "/search" are "/pull", ' +
+                 '"/pull-for-story", "retrieve-story".')
+    return usage_msg
 
 @app.route('/search')
 def search():
