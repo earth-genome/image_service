@@ -43,7 +43,7 @@ def help():
     msg += ('Pull images for a story in the WTL database:'
             '&emsp;{}<br>'.format(''.join((request.url, 'pull-for-story?'))))
         
-    msg += '<br>Hit one of the above for specific argument formatting.'
+    msg += '<br>Hit one of the above urls for specific argument formatting.'
     
     return msg
 
@@ -57,7 +57,7 @@ def search():
     try:
         provider, lat, lon, _, specs = _parse_geoloc(request.args)
     except ValueError as e:
-        raise ValueError('{}\n{}\n'.format(repr(e), msg))
+        return '{}<br>{}<br>'.format(repr(e), msg)
 
     if provider == 'digital_globe':
         grabber = dg_grabber.DGImageGrabber(**specs)
@@ -77,10 +77,10 @@ def pull():
     try:
         provider, lat, lon, scale, specs = _parse_geoloc(request.args)
     except ValueError as e:
-        raise ValueError('{}\n{}\n'.format(repr(e), msg))
+        return '{}<br>{}<br>'.format(repr(e), msg)
 
     if not scale:
-        raise ValueError('Scale (in km) is required.\n{}'.format(msg))
+        return 'Scale (in km) is required.<br>{}'.format(msg)
 
     specs.update({'bbox_rescaling': 1})
     specs.update({'provider_names': [provider]})
@@ -99,7 +99,7 @@ def retrieve_story():
     try:
         story, _  = _parse_index(request.args)
     except ValueError as e:
-        raise ValueError('{}\n{}\n'.format(repr(e), msg))
+        return '{}<br>{}<br>'.format(repr(e), msg)
         
     return json.dumps({story.idx: story.record})
 
@@ -113,7 +113,7 @@ def pull_for_story():
     try:
         story, N_images  = _parse_index(request.args)
     except ValueError as e:
-        raise ValueError('{}\n{}\n'.format(repr(e), msg))
+        return '{}<br>{}<br>'.format(repr(e), msg)
 
     grabber = auto_grabber.AutoGrabber(WIRE_BUCKET, N_images=N_images)
     records = grabber.pull_for_story(story)
@@ -167,7 +167,7 @@ def _parse_index(args):
     
     
 def _help_msg(url_base, url_args, notes):
-    return 'Usage: {}?{}\n{}\n'.format(url_base, url_args, notes)
+    return '<br>Usage: {}?{}<br>{}'.format(url_base, url_args, notes)
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0')
