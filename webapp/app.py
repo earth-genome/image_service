@@ -24,7 +24,7 @@ BUCKET = 'bespoke-images'
 # for help messaging
 EXAMPLE_ARGS = ('provider=digital_globe' + 
                 '&lat=37.7749&lon=-122.4194' +
-                '&start=2018-01-01&end=2018-05-02&clouds=10&N=1')
+                '&start=2018-01-01&end=2018-05-02&clouds=10&N=3')
 
 app = Flask(__name__)
 
