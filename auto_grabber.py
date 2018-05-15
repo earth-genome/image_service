@@ -176,29 +176,29 @@ class AutoGrabber(object):
             print('Pulling for bbox {}.\n'.format(bbox.bounds))
             new_recs = grabber(
                 bbox, file_header=os.path.join(self.staging_dir, ''), **specs)
+            for r in new_recs:
+                urls = self._upload(r.pop('paths'))
+                r.update({'urls': urls})
             records += new_recs
             # Break when a full N_image stack is pulled from a single provider
             if len(new_recs) < specs['N_images']:
                 break
             
         print('Pulled {} scene(s).\n'.format(len(records)))
-        
-        for r in records:
-            urls = []
-            paths = r.pop('paths')
-            for path in paths:
-                try:
-                    url = self.bucket_tool.upload_blob(path,
-                                                       os.path.split(path)[1])
-                    urls.append(url)
-                except Exception as e:
-                    print('Bucket error for {}: {}\n'.format(path, repr(e)))
-                    self.logger.exception('Bucket error for {}'.format(path))
-                os.remove(path)
-            print('Uploaded images:\n{}\n'.format(urls))
-            r.update({'urls': urls})
-        
         return records
+
+    def pull_id(self, provider, catalogID, bbox, **specs):
+        """Pull image for a given catalogID and post to bucket."""
+        specs = self.image_specs.copy()
+        specs.update(image_specs)
+        
+        grabber = self.providers[provider]['grabber'](**specs)
+        record = grabber.grab_id(
+            catalogID, bbox, file_header=os.path.join(self.staging_dir, ''),
+            **specs)
+        urls = self._upload(record.pop('paths'))
+        record.update({'urls': urls})
+        return record
 
     def pull_for_story(self, story, **image_specs):
         """Pull images for all bboxes in a DBItem story."""
@@ -220,10 +220,30 @@ class AutoGrabber(object):
         story.record.update({'core_locations': core_locations})
         story_record = STORY_SEEDS.put_item(story)
         if not story_record:
-            self.logger.error('Posting image records to DB: {}\n'.format(
+            raise Exception('Posting image records to DB: {}\n'.format(
                 image_records))
                 
         return image_records
+
+    def _upload(self, paths):
+        """Upload staged image files to the bucket.
+
+        Argument paths:  List of local paths to staged images
+
+        Output:  Files are uploaded to bucket and local copies removed.
+        
+        Returns:  List of bucket urls.
+        """
+        urls = []
+        for path in paths:
+            try:
+                url = self.bucket_tool.upload_blob(path, os.path.split(path)[1])
+                urls.append(url)
+            except Exception as e:
+                print('Bucket error for {}: {}\n'.format(path, repr(e)))
+                os.remove(path)
+        print('Uploaded images:\n{}\n'.format(urls))
+        return urls
 
     def _enforce_size_specs(self, bbox):
         """Resize bbox if necesssary to make dimensions conform
@@ -304,7 +324,6 @@ class BulkGrabber(AutoGrabber):
                 bbox = geometry.box(*polygon.bounds)
                 records = self.pull(bbox, **feature['properties'])
             except Exception as e:
-                print('Pulling images: {}\n'.format(repr(e)))
                 self.logger.exception('Pulling for bbox {}\n'.format(
                     bbox.bounds))
                 records = []
@@ -351,7 +370,10 @@ class BulkGrabber(AutoGrabber):
                     continue
             except KeyError:
                 continue
-            image_records = self.pull_for_story(s)
+            try: 
+                image_records = self.pull_for_story(s)
+            except Exception as e:
+                self.logger.exception('Pulling for story {}\n'.format(s.idx))
         print('complete')
         return 
 
