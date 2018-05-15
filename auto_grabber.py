@@ -80,13 +80,14 @@ from grab_imagery import log_utilities
 from grab_imagery.digital_globe import dg_grabber
 from grab_imagery.geobox import geobox
 from grab_imagery.geobox import conversions
+from grab_imagery.planet_labs import planet_grabber
 
 PROVIDERS = {
     'digital_globe': {
         'grabber': dg_grabber.DGImageGrabber,
     },
     'planet': {
-        'grabber': None # WIP
+        'grabber': planet_grabber.PlanetGrabber
     }
 }
 
