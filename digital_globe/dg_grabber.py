@@ -140,7 +140,7 @@ class DGImageGrabber(object):
 
         return recs_written
 
-    def grab_id(self, catalogID, bbox, file_header='', **specs):
+    def grab_by_id(self, catalogID, bbox, file_header='', **specs):
         """Grab and write image for a known catalogID."""
         record = self.search_id(catalogID)
         daskimgs, _ = self.retrieve(bbox, [record], **specs)
@@ -175,7 +175,7 @@ class DGImageGrabber(object):
         records.sort(key=lambda r: r['properties']['timestamp'], reverse=True)
         return records
 
-    def search_id(self, catalogID):
+    def search_id(self, catalogID, *args):
         """Retrieve catalog record for input catalogID."""
         return catalog.get(catalogID)
 
