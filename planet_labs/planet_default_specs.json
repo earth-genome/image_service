@@ -1,0 +1,13 @@
+{
+    "clouds": 10,
+    "min_intersect": 0.9,
+    "startDate": "2008-09-01T00:00:00.0000Z",
+    "endDate": null,
+    "item_types": [
+	"PSScene3Band",
+	"PSOrthoTile",
+	"REOrthoTile",
+	"SkySatScene"
+    ],
+    "write_styles": []
+}
