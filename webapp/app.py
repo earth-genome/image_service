@@ -7,12 +7,15 @@ import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 
-from flask import Flask, request
+from flask import Flask, request, make_response
 
 sys.path.append('grab_imagery/story-seeds/')
 from grab_imagery import auto_grabber
 from grab_imagery import firebaseio
 from grab_imagery.digital_globe import dg_grabber
+from grab_imagery.planet_labs import planet_grabber
+
+PROVIDERS = ['digital_globe', 'planet']
 
 # newswire
 DB_CATEGORY = '/WTL'
@@ -25,6 +28,7 @@ BUCKET = 'bespoke-images'
 EXAMPLE_ARGS = ('provider=digital_globe' + 
                 '&lat=37.7749&lon=-122.4194' +
                 '&start=2018-01-01&end=2018-05-02&clouds=10&N=3')
+
 
 app = Flask(__name__)
 
@@ -44,7 +48,7 @@ def help():
             '&emsp;{}<br>'.format(''.join((request.url, 'pull-for-story?'))))
         
     msg += '<br>Hit one of the above urls for specific argument formatting.'
-    
+
     return msg
 
 @app.route('/search')
@@ -61,10 +65,11 @@ def search():
 
     if provider == 'digital_globe':
         grabber = dg_grabber.DGImageGrabber(**specs)
-        records = grabber.search_latlon_clean(lat, lon,
-                                              N_records=specs['N_images'])
     elif provider == 'planet':
-        return 'Just kidding! Planet imagery coming soon.'
+        grabber = planet_grabber.PlanetGrabber(**specs)
+        
+    records = grabber.search_latlon_clean(lat, lon,
+                                          N_records=specs['N_images'])
     return json.dumps(records)
     
 @app.route('/pull')
@@ -130,12 +135,9 @@ def _parse_geoloc(args):
     scale = args.get('scale', type=float)
 
     provider = args.get('provider', type=str)
-    # Until Planet is supported:
-    supported = ['digital_globe']
-    # supported = list(auto_grabber.PROVIDERS.keys())
-    if not provider or provider not in supported:
+    if not provider or provider not in PROVIDERS:
         raise ValueError('A provider is required; supported providers ' +
-                         'are {}'.format(supported))
+                         'are {}'.format(PROVIDERS))
     
     specs = {
         'startDate': args.get('start', type=str),

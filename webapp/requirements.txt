@@ -10,4 +10,5 @@ matplotlib
 tifffile
 gbdxtools
 google-cloud-storage
+planet
 scikit-image
