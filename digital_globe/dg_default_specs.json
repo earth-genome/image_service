@@ -1,13 +1,18 @@
 {
     "clouds": 10,
-    "offNadirAngle": null,
+    "min_intersect": 0.9,
     "startDate": "2008-09-01T00:00:00.0000Z",
     "endDate": null,
+    "offNadirAngle": null,
     "band_type": "MS",
     "pansharpen": null,
     "pansharp_scale": 2.5,
     "acomp": false,
-    "min_intersect": 0.9,
-    "image_source": "WV",
-    "proj": "EPSG:4326"
+    "image_source": [
+	"WORLDVIEW02",
+	"WORLDVIEW03_VNIR",
+	"GEOEYE01"
+    ],
+    "proj": "EPSG:4326",
+    "write_styles": []
 }
