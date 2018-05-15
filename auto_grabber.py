@@ -27,7 +27,7 @@ Image specs determine additional image parameters and are passed through
 auto_grabber.py to individual (Digital Globe, Planet, etc.) grabbers,
 where their particular use is defined.  They may be specified  
 via **kwargs, and/or via json-formatted file.  As of writing,
-default_image_specs.json contains:
+default_specs.json contains:
 {
     "clouds": 10,  # maximum allowed percentage cloud cover
     "min_intersect": 0.9,  # min fractional overlap between bbox and scene
@@ -38,7 +38,8 @@ default_image_specs.json contains:
     "max_size": 10, # Largest allowed bbox, in km
     "N_images": 1  # Number of images to pull for each bbox
     "write_styles": [  
-        "natural"  # Defined in postprocessing.color
+        "matte",       # Defined in postprocessing.color
+        "contrast"  
     ]
 }
 
@@ -46,7 +47,7 @@ default_image_specs.json contains:
 the launch date of GeoEye-1.)
 
 Additional kwargs corresponding to specs for individual grabbers may be passed
-in the same way. (The parameters above in default_image_specs have nomenclature
+in the same way. (The parameters above in default_specs have nomenclature
 common to all providers; other specs should have names *unique* to a given
 provider to avoid unintended consequences of passing, e.g. a Planet
 spec to a DG call.  See, e.g. digital_globe/dg_default_specs.json for
@@ -91,7 +92,7 @@ PROVIDERS = {
 
 # Default image specs:
 DEFAULT_IMAGE_SPECS_FILE = os.path.join(os.path.dirname(__file__),
-                                        'default_image_specs.json')
+                                        'default_specs.json')
 with open(DEFAULT_IMAGE_SPECS_FILE, 'r') as f:
     DEFAULT_IMAGE_SPECS = json.load(f)
 
@@ -173,10 +174,8 @@ class AutoGrabber(object):
             provider = providers.pop()
             grabber = provider['grabber'](**specs)
             print('Pulling for bbox {}.\n'.format(bbox.bounds))
-            new_recs = grabber(bbox,
-                               N_images=specs['N_images'],
-                               write_styles=specs['write_styles'],
-                               file_header=os.path.join(self.staging_dir, ''))
+            new_recs = grabber(
+                bbox, file_header=os.path.join(self.staging_dir, ''), **specs)
             records += new_recs
             # Break when a full N_image stack is pulled from a single provider
             if len(new_recs) < specs['N_images']:
