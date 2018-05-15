@@ -187,7 +187,7 @@ class AutoGrabber(object):
         print('Pulled {} scene(s).\n'.format(len(records)))
         return records
 
-    def pull_id(self, provider, catalogID, bbox, **specs):
+    def pull_id(self, provider, catalogID, bbox, **image_specs):
         """Pull image for a given catalogID and post to bucket."""
         specs = self.image_specs.copy()
         specs.update(image_specs)
