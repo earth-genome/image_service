@@ -155,7 +155,7 @@ class PlanetGrabber(object):
         point = geometry.Point(lon, lat)
         return self.search(point)
 
-    def search_id(self, item_type, catalogID):
+    def search_id(self, catalogID, item_type):
         """Retrieve catalog record for input catalogID."""
         response = client.get_item(item_type, catalogID)
         return response.get()
