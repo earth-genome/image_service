@@ -1,8 +1,8 @@
-"""Class structure to automate searching and downloadling from DG catalog.
+"""Class structure to automate searching and downloadling from Planet Labs.
 
-API ref: http://gbdxtools.readthedocs.io/en/latest/index.html
+API ref: https://planetlabs.github.io/planet-client-python/index.html
 
-Class DGImageGrabber: A class to grab an image respecting given specs.
+Class PlanetGrabber: A class to grab an image respecting given specs.
 
     External methods:
         __call__: Grab most recent available images consistent with specs.
@@ -10,52 +10,41 @@ Class DGImageGrabber: A class to grab an image respecting given specs.
         search_clean: Search and return streamlined image records.
         search_latlon:  Given lat, lon, search for relevant image records.
         search_latlon_clean:  Search and return streamlined image records.
-        retrieve:  Retrieve dask images objects.
-        write_img:  Write a dask image to file.
 
 Usage with default specs (defaults except for N_images, write_styles):
 > bbox = geobox.bbox_from_scale(37.77, -122.42, 1.0)
-> g = DGImageGrabber()
-> g(bbox, N_images=3, write_styles=['matte', 'contrast'],
-    file_header='SanFrancisco')
+> g = PlanetGrabber()
+> g(bbox, N_images=3, file_header='SanFrancisco')
 
 
-Catalog and image specs have defaults set in dg_default_specs.json, which,
+Catalog and image specs have defaults set in planet_default_specs.json, which,
 as of writing, takes form:
 {
-    "clouds": 10,   # maximum allowed percentage cloud cover
-    "offNadirAngle": null,   # (relation, angle), e.g. ('<', 10)
-    "startDate": "2008-09-01T00:00:00.0000Z",  # for catalog search
-    "endDate": null,  # for catalog search
-    "band_type": "MS",  # mulit-spectral
-    "acomp": false,
-    "proj": "EPSG:4326",
-    "min_intersect": 0.9,  # min fractional overlap between bbox and scene
-    "image_source": 'WV',
-    "pansharpen": null,
-    "pansharp_scale": 2.5  # in km; used by _check_highres(), which sets
-        pansharpen=True below this scale if pansharpen is None
-    "N_images": 2,
+    "clouds": 10,    # maximum allowed percentage cloud cover
+    "min_intersect": 0.9,
+    "startDate": "2008-09-01T00:00:00.0000Z",    # for catalog search
+    "endDate": null,
+    "item_types": [
+	    "PSScene3Band",
+	    "PSOrthoTile",
+	    "REOrthoTile",
+	    "SkySatScene"
+    ],
+    "asset_types": [    # We prefer assets in this (reverse) order:
+	    "analytic",
+	    "ortho_visual",
+	    "visual"
+    ],
     "write_styles": []
 }
-            
-Further notes on image_source and pansharpening:
-
-image_source is from ('WV', 'DG-Legacy'). This refers both to a DG image
-class ('WV', 'DG-Legacy' ~ CatalogImage), and in
-the case of  'WV', 'DG-Legacy', the assignment entails also assumptions
-about particular satellite sensors expressed below in _build_search_filters().
-
-parameter pansharpen can take values None, False or True.  If None,
-_allow_highres() is called to determine whether pansharpen should
-be True or False according to whether image is smaller or larger than
-pansharp_scale.
 
 """
 
+import asyncio
 import datetime
 import json
 import os
+import subprocess
 import sys
 
 import dateutil
@@ -68,22 +57,22 @@ import tifffile
 from geobox import geobox
 from postprocessing import color
 
-client = api.ClientV1()
-
 # Default catalog and image parameters:
 DEFAULT_SPECS_FILE = os.path.join(os.path.dirname(__file__),
                                   'planet_default_specs.json')
 with open(DEFAULT_SPECS_FILE, 'r') as f:
     DEFAULT_SPECS = json.load(f)
 
+# For asynchronous handling of scene activation and download, in seconds:
+WAITTIME = 15 
+
 class PlanetGrabber(object):
     
-    """Class DGImageGrabber: Tool to grab a DG image respecting given specs.
+    """Class PlanetGrabber: Tool to grab a DG image respecting given specs.
 
     Attributes:
         specs: dict of catalog and image specs (see above for format and
            defaults)
-        search_filters: DG-formatted specs for catalog search
 
     External methods:
         __call__: Grab most recent available images consistent with specs.
@@ -100,7 +89,8 @@ class PlanetGrabber(object):
     def __init__(self, **specs):
         self.specs = DEFAULT_SPECS.copy()
         self.specs.update(specs)
-        self.search_filters = _build_search_filters(**self.specs)
+        self._search_filters = _build_search_filters(**self.specs)
+        self._client = api.ClientV1()
 
     def __call__(self, bbox, file_header='', **grab_specs):
         """Grab the most recent available images consistent with specs.
@@ -120,35 +110,45 @@ class PlanetGrabber(object):
         """
         specs = self.specs.copy()
         specs.update(**grab_specs)
-        if specs['pansharpen'] is None:
-            specs['pansharpen'] = self._check_highres(bbox)
             
         records = self.search(bbox)[::-1]
 
-        daskimgs, recs_retrieved = self.retrieve(bbox, records, **specs)
+        # add function here to check min_intersect / pull all intersecting
+        # records w/ roughly the same datetime.
+        # then adjust records[-specs['N_images']:] accordingly
 
-        recs_written = []
-        for daskimg, rec in zip(daskimgs, recs_retrieved):
-            prefix = _build_filename(bbox, rec, file_header)
-            paths = self.write_img(daskimg, prefix, **specs)
-            cleaned = _clean_record(rec)
-            cleaned.update({'paths': paths})
-            recs_written.append(cleaned)
+        retrieve_tasks = [
+            asyncio.ensure_future(
+                self.retrieve_asset(record))
+            for record in records[-specs['N_images']:]
+        ]
 
+        async def async_handler(tasks, bbox, file_header, **specs):
+            recs_written = []
+            for future in asyncio.as_completed(tasks):
+                asset, record = await future
+                print('Retrieved {}\nDownloading...'.format(record['id']))
+                path = self.download(
+                    asset, _build_filename(bbox, record, file_header))
+                print('Done.')
+                written = self.reprocess(bbox, record, path, **specs)
+                recs_written.append(written)
+            return recs_written
+
+        loop = asyncio.get_event_loop()
+        recs_written = loop.run_until_complete(
+            async_handler(retrieve_tasks, bbox, file_header, **specs))
         return recs_written
-    
+        
     def search(self, bbox, MAX_RECORDS=2500):
         """Search the catalog for relevant imagery."""
         aoi = geometry.mapping(bbox)
         query = api.filters.and_filter(
-            api.filters.geom_filter(aoi), *self.search_filters)
+            api.filters.geom_filter(aoi), *self._search_filters)
         request = api.filters.build_search_request(query,
             item_types=self.specs['item_types'])
-        response = client.quick_search(request)
-        records = sorted(response.items_iter(limit=MAX_RECORDS),
-                         key=lambda r: r['properties']['acquired'],
-                         reverse=True)
-        return records
+        response = self._client.quick_search(request, sort='acquired desc')
+        return list(response.items_iter(limit=MAX_RECORDS))
 
     def search_latlon(self, lat, lon):
         """Search the catalog for relevant imagery."""
@@ -157,7 +157,7 @@ class PlanetGrabber(object):
 
     def search_id(self, catalogID, item_type):
         """Retrieve catalog record for input catalogID."""
-        response = client.get_item(item_type, catalogID)
+        response = self._client.get_item(item_type, catalogID)
         return response.get()
 
     def search_clean(self, bbox, N_records=10):
@@ -175,79 +175,70 @@ class PlanetGrabber(object):
         """
         records = self.search_latlon(lat, lon)
         return [_clean_record(r) for r in records[:N_records]]
-
-    def retrieve(self, bbox, records, N_images=1, **specs):
-        """Retrieve dask images from the catalog.
-
-        Arugment records:  DG catalog records for the sought images.
-
-        Returns:  Lists of the dask image objects and the associaed records.
-        """
-        daskimgs, recs_retrieved = [], []
-        while len(records) > 0 and len(daskimgs) < N_images:
-            record = records.pop()
-            id, props = record['identifier'], record['properties']
-            print('Trying ID {}:\n {}, {}'.format(id, props['timestamp'],
-                                                props['sensorPlatformName']))
-            try:
-                daskimg = gbdxtools.CatalogImage(id, **specs) 
-                footprint = wkt.loads(props['footprintWkt'])
-                intersection = bbox.intersection(footprint)
-                daskimgs.append(daskimg.aoi(bbox=intersection.bounds))
-                recs_retrieved.append(record)
-                print('Retrieved ID {}'.format(id))
-            except Exception as e:
-                print('Exception: {}'.format(e))
-        print('Found {} images of {} requested.'.format(
-            len(daskimgs), N_images), flush=True)
-        return daskimgs, recs_retrieved
-
-    def write_img(self, daskimg, file_prefix, write_styles=[], **specs):
-        """Write a DG dask image to file.
-                              
-        Argument write_styles: from 'DGDRA' or styles defined in
-            postprocessing.color.  If empty, a raw GeoTiff is written.
-                
-        Returns: Local paths to images.
-        """
-        paths = []
-        styles = [style.lower() for style in write_styles]
-
-        # deprecated: DG color correction 
-        if 'dgdra' in styles:
-            filename = write_dg_dra(daskimg, file_prefix)
-            paths.append(filename)
-            styles.remove('dgdra')
-            if not styles:
-                return paths
-
-        # grab the raw geotiff
-        bands = daskimg.shape[0]
-        tifname = file_prefix + '.tif'
-        print('\nStaging at {}\n'.format(tifname), flush=True)
-        if bands == 4:
-            daskimg.geotiff(path=tifname, bands=[2,1,0], **specs)
-        elif bands == 8:
-            daskimg.geotiff(path=tifname, bands=[4,2,1], **specs)
-
-        # possibilities that ask for color correction
-        rough_img = color.coarse_adjust(tifffile.imread(tifname))
-        for style in styles:
-            if style in color.STYLE_PARAMS.keys():
-                cc = color.ColorCorrect(**color.STYLE_PARAMS[style])
-                corrected = cc.correct_and_reduce(rough_img)
-                filename = tifname.split('.tif')[0] + '-' + style + '.png'
-                print('\nSaving to {}\n'.format(filename), flush=True)
-                plt.imsave(filename, corrected)
-                paths.append(filename)
-
-        # if no other styles, keep the raw geotiff
-        if paths:
-            os.remove(tifname)
-        else:
-            paths.append(tifname)  
     
-        return paths
+    async def retrieve_asset(self, record):
+        assets = self._client.get_assets_by_id(
+            record['properties']['item_type'], record['id']).get()
+        asset, asset_type = self._activate(assets)
+        # TODO: remove counter / debugging print statements
+        counter = 0 
+        while not self._is_active(asset):
+            await asyncio.sleep(WAITTIME)
+            assets = self._client.get_assets_by_id(
+                record['properties']['item_type'], record['id']).get()
+            asset = assets[asset_type]
+            counter += 1
+            print('{}th wait cycle on asset:\n{}'.format(counter, asset))
+        record.update({'asset_type': asset_type})
+        return asset, record
+
+    def _activate(self, assets):
+        """Activate the best available asset."""
+        asset_types = self.specs['asset_types'].copy()
+        while asset_types:
+            asset_type = asset_types.pop()
+            if asset_type in assets.keys():
+                asset = assets[asset_type]
+                print('Activating:\n{}'.format(asset))
+                client.activate(asset)
+                break
+        return asset, asset_type
+            
+    def _is_active(self, asset):
+        """Check asset activation status."""
+        return True if asset['status'] == 'active' else False
+
+    def download(self, asset, filename):
+        """Download asset and write to filename."""
+        body = self._client.download(asset).get_body()
+        body.write(file=filename)
+        return filename
+
+    # WIP.  Need to add, potentially, merging of tiles, cropping,
+    # handling for analytic asset_type
+    def reprocess(self, bbox, record, path, **specs):
+        """Reprocess downloaded images and clean records to return.
+
+        Depending on asset type, this function:
+            crops image to bbox,
+            reforms band structure,
+            color corrects (perhaps producing mutliple versions of the image),
+            cleans and adds image paths to the record.
+
+        Returns: Updated record
+        """
+        if (record['asset_type'] == 'visual' or
+            record['asset_type'] == 'ortho_visual'):
+            outpath = path.split('.tif')[0] + 'LZW.tif'
+            subprocess.call(['gdal_translate', '-co', 'COMPRESS=LZW',
+                             '-b', '1', '-b', '2', '-b', '3',
+                             path, outpath])
+            os.remove(path)
+            paths = [outpath]
+            
+        cleaned = _clean_record(record)
+        cleaned.update({'paths': paths})
+        return cleaned
 
     # Functions to enforce certain specs.
 
@@ -284,6 +275,7 @@ def _clean_record(record):
     keymap = {  # maps record keys to our standardized nomenclature
         'provider': 'provider',
         'item_type': 'item_type',
+        'asset_type': 'asset_type',
         'acquired': 'timestamp',
         'cloud_cover': 'clouds',
         'pixel_resolution': 'resolution',
@@ -306,7 +298,8 @@ def _build_filename(bbox, record, file_header=''):
     """
     tags = ('bbox{:.4f}_{:.4f}_{:.4f}_{:.4f}'.format(*bbox.bounds))
     filename = (file_header + record['id'] + '_' +
-                record['properties']['acquired'] + tags)
+                record['properties']['acquired'] + tags +
+                record['asset_type'] + '.tif')
     return filename
 
 
