@@ -9,5 +9,10 @@
 	"REOrthoTile",
 	"SkySatScene"
     ],
+    "asset_types": [
+	"analytic",
+	"ortho_visual",
+	"visual"
+    ],
     "write_styles": []
 }
