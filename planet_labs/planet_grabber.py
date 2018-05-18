@@ -4,7 +4,7 @@ API ref: https://planetlabs.github.io/planet-client-python/index.html
 
 Class PlanetGrabber: A class to grab an image respecting given specs.
 
-Usage with default specs (defaults except for N_images, write_styles):
+Usage with default specs (default except for N_images):
 > bbox = geobox.bbox_from_scale(37.77, -122.42, 1.0)
 > g = PlanetGrabber()
 > g(bbox, N_images=3, file_header='SanFrancisco')
@@ -28,26 +28,27 @@ as of writing, takes form:
 	    "ortho_visual",
 	    "visual"
     ],
-    "write_styles": []
+    "write_styles": [
+    "matte",
+	"contrast",
+	"dra",
+	"desert"
+    ]
 }
 
 """
 
 import asyncio
-import datetime
 import json
 import os
-import subprocess
 import sys
 
-import dateutil
 import matplotlib.pyplot as plt
 import numpy as np
 from planet import api
 from shapely import geometry
 import tifffile
 
-from geobox import geobox
 from postprocessing import color
 from postprocessing import gdal_routines
 
@@ -70,14 +71,15 @@ class PlanetGrabber(object):
 
     External methods:
         __call__: Grab most recent available images consistent with specs.
-        grab_id:  Grab and write image for a known catalogID.
+        grab_by_id:  Grab and write image for a known catalogID.
         search:  Given a boundingbox, search for relevant image records.
         search_clean: Search and return streamlined image records.
         search_latlon:  Given lat, lon, search for relevant image records.
         search_latlon_clean:  Search and return streamlined image records.
         search_id: Retrieve catalog record for input catalogID.
-        retrieve:  Retrieve dask images objects.
-        write_img:  Write a dask image to file.
+        async retrieve_asset: Activate an asset and add its reference to record.
+        download: Download an asset.
+        reprocess: Reprocess a downloaded image and clean record to return.
     """
 
     def __init__(self, **specs):
@@ -94,22 +96,16 @@ class PlanetGrabber(object):
             file_header: optional prefix for output image files
             grab_specs: to override certain elements of self.specs, possibly:
                 N_images: number of images to retrieve
-                write_styles: list of possible output image styles, from:
-                    'DGDRA' (DG Dynamical Range Adjusted RGB PNG)
-                    color-corrected styles defined in postprocessing.color
-                    (if empty, a raw GeoTiff is written)
+                write_styles: list of possible output image styles
+                    (from color.STYLES)
             
-
         Returns: List of records of written images
         """
         specs = self.specs.copy()
         specs.update(**grab_specs)
             
         records = self.search(bbox)[::-1]
-
-        # add function here to check min_intersect / pull all intersecting
-        # records w/ roughly the same datetime.
-        # then adjust records[-specs['N_images']:] accordingly
+        records = [r for r in records if self._well_overlapped(bbox, r)]
 
         retrieve_tasks = [
             asyncio.ensure_future(
@@ -121,9 +117,9 @@ class PlanetGrabber(object):
             recs_written = []
             for future in asyncio.as_completed(tasks):
                 asset, record = await future
-                print('Retrieved {}\nDownloading...'.format(record['id']))
+                print('Retrieved {}\nDownloading...'.format(record['id']),
+                      flush=True)
                 path = self.download(asset, file_header)
-                print('Done.', flush=True)
                 written = self.reprocess(bbox, record, path, **specs)
                 recs_written.append(written)
             return recs_written
@@ -132,7 +128,18 @@ class PlanetGrabber(object):
         recs_written = loop.run_until_complete(
             async_handler(retrieve_tasks, bbox, file_header, **specs))
         return recs_written
-        
+
+    def grab_by_id(self, bbox, catalogID, item_type, file_header='', **specs):
+        """Grab and write image for a known catalogID."""
+        record = self.search_id(catalogID, item_type)
+        asset, record = self.retrieve_asset(record)
+        if not asset:
+            raise Exception('Catolog entry for id {} not returned.'.format(
+                catalogID))
+        path = self.download(asset, file_header)
+        written = self.reprocess(bbox, record, path, **specs)
+        return written
+    
     def search(self, bbox, MAX_RECORDS=2500):
         """Search the catalog for relevant imagery."""
         aoi = geometry.mapping(bbox)
@@ -170,6 +177,7 @@ class PlanetGrabber(object):
         return [_clean_record(r) for r in records[:N_records]]
     
     async def retrieve_asset(self, record):
+        """Activate an asset and add its reference to record."""
         assets = self._client.get_assets_by_id(
             record['properties']['item_type'], record['id']).get()
         asset, asset_type = self._activate(assets)
@@ -206,7 +214,7 @@ class PlanetGrabber(object):
         return path
 
     def reprocess(self, bbox, record, path, write_styles=[], **specs):
-        """Reprocess downloaded images and clean records to return.
+        """Reprocess a downloaded image and clean record to return.
 
         Depending on asset type, this function:
             crops image to bbox,
@@ -221,35 +229,26 @@ class PlanetGrabber(object):
         
         path = gdal_routines.crop(path, bbox)
         path = gdal_routines.reband(path, _get_bandmap(record))
+        paths.append(path)
         print('\nStaging at {}\n'.format(path), flush=True)
 
         def correct_and_write(img, path, style):
             """Correct color and write to file."""
             corrected = color.STYLES[style](img)
             outpath = path.split('LZW.tif')[0] + '-' + style + '.png'
-            print('\nSaving to {}\n'.format(outpath), flush=True)
+            print('\nStaging at {}\n'.format(outpath), flush=True)
             plt.imsave(outpath, corrected)
             
         img = tifffile.imread(path)
         if (record['properties']['asset_type'] == 'visual' or
             record['properties']['asset_type'] == 'ortho_visual'):
 
-            # minimal tweaks, since Planet visual is already corrected:
-            paths.append(path)
+            # add this minimal tweak, since Planet visual is already corrected:
             paths.append(correct_and_write(img, path, 'expanded'))
-            if 'dra' in styles:
-                paths.append(correct_and_write(img, path, 'dra'))
 
-        elif record['properties']['asset_type'] == 'analytic':
-            for style in styles:
-                if style in color.STYLES.keys():
-                    paths.append(correct_and_write(img, path, style))
-            
-            # if no other styles, keep the raw geotiff
-            if paths:
-                os.remove(path)
-            else:
-                paths.append(path)  
+        for style in styles:
+            if style in color.STYLES.keys():
+                paths.append(correct_and_write(img, path, style))
 
         cleaned = _clean_record(record)
         cleaned.update({'paths': paths})
@@ -259,13 +258,13 @@ class PlanetGrabber(object):
 
     def _well_overlapped(self, bbox, record):
         """Check whether bbox and record overlap at level min_intersect."""
-        footprint = wkt.loads(record['properties']['footprintWkt'])
+        footprint = geometry.asShape(record['geometry'])
         intersection = bbox.intersection(footprint)
         intersect_frac = intersection.area/bbox.area
         wo = True if intersect_frac > self.specs['min_intersect'] else False
         if not wo:
             print('Rejectd ID {}: Overlap with bbox {:.1f}%'.format(
-                record['properties']['catalogID'], 100 * intersect_frac))
+                record['id'], 100 * intersect_frac))
         return wo
 
 
