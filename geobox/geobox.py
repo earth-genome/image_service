@@ -84,4 +84,14 @@ def google_to_shapely_box(viewport):
                                     for p in viewport.values()])
     return geometry.box(*points.bounds)
     
+def shapely_to_gdal_box(bbox):
+    """Convert a shapely box to a coordinate list ordered for gdal_translate.
 
+    Argument bbox:  Shapely box, whose bounds are ordered
+        (minx, miny, maxx, maxy)
+
+    Returns: Tuple in order (upper-left-x, upper-left-y, lower-right-x,
+        lower-right-y).
+    """
+    bounds = np.asarray(bbox.bounds)
+    return list(bounds[[0, 3, 2, 1]])
