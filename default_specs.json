@@ -9,6 +9,8 @@
     "N_images": 3,
     "write_styles": [
         "matte",
-	"contrast"
+	"contrast",
+	"dra",
+	"desert"
     ]
 }
