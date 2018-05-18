@@ -43,12 +43,15 @@ class ThumbnailGrabber(object):
     Method:
         source_and_post: pull thumbnails and post to cloud storage
     """
-    def __init__(self,
-                 base_url=WEBAPP_URL,
-                 staging_dir=STAGING_DIR,
-                 postprocessor=color.ColorCorrect().brightness_and_contrast,
-                 bucket_tool=BUCKET_TOOL,
-                 logger=None):
+    def __init__(
+        self,
+        base_url=WEBAPP_URL,
+        staging_dir=STAGING_DIR,
+        postprocessor=color.ColorCorrect(
+            cut_frac=.75, gamma=.75, return_ubyte=False).enhance_contrast,
+        bucket_tool=BUCKET_TOOL,
+        logger=None):
+        
         self.base_url = base_url
         if not os.path.exists(staging_dir):
             os.makedirs(staging_dir)

@@ -1,10 +1,11 @@
 """Functions for automated basic color correction on an image.
 
 The three basic correction processes are embedded in the internal methods 
-    _expand_histogram: Expand histogram reference values to white and black.
-    _adjust_contrast: Peform gamma adjustment.
-    _balance_color: Shift reference value to max brightness for each color
-        channel.
+    _expand_histogram: Linearly rescale histogram, so reference values
+        end at white and black.
+    _gamma_transform: Peform a nonlinear stretching of the image histogram.
+    _balance_color: Linearly rescale histogram for each color channel
+        separately.
 
 These functions are packaged into:
 
@@ -12,15 +13,18 @@ Class ColorCorrect:  Perform basic color correction on an image.
 
 Usage with default parameters:
 > cc = ColorCorrect()
-> corrected = cc.correct_and_reduce(image)  (returns uint8)
+> corrected = cc.correct(image)  # returns uint8
 
 OR
 
-> corrected = cc.correct(image) (returns image with input dtype)
+> cc = ColorCorrect(return_ubyte=False)
+> corrected = cc.correct(image)  # returns image with input dtype
 
 Or if color will be corrected later by hand:
 > cc = ColorCorrect()
-> corrected = cc.brightness_and_contrast(image)
+> corrected = cc.enhance_contrast(image)
+
+See STYLES, bottom, for instantiations tuned to produce different effects.
 
 Argument image:  numpy array of type uint16, uint8, or float32, with assumed
     standard maximum values for images (65535, 255, or 1.0 respectively) 
@@ -29,12 +33,10 @@ Additional external function:
     coarse_adjust:  Convert to uint16 and do a rough histogram expansion.
         (Ad hoc to DG to prepare DG geotiffs for ColorCorrect routines.)
 
-Certain pre-set collections of tuneable parameters are given in STYLE_PARAMS.
-
-Usage from main, for Planet:
+Usage from main, for Planet, yielding all possible STYLES.  
 > python color.py planetimg.tif
 
-Usage from main, for DG (-c flag coarse corrects and ensures proper dtype)
+Usage from main, for DG (-c flag coarse-corrects and ensures proper dtype)
 > python color.py dgimg.tif -c 
         
 Notes:
@@ -61,6 +63,20 @@ import skimage
 from skimage import exposure
 import tifffile
 
+
+# For ColorCorrect class, a method decorator to return uint8 images,
+# activated by class attribute return_ubyte (True/False)
+
+def reduce_to_ubyte(fn):
+    """Decorate function to return unit8 images."""
+    def reduced(self, img):
+        img = fn(self, img)
+        if self.return_ubyte:
+            return skimage.img_as_ubyte(img)
+        else:
+            return img
+    return reduced
+
 class ColorCorrect(object):
     """Perform basic color correction on an image.
 
@@ -71,14 +87,15 @@ class ColorCorrect(object):
         percentiles: high/low histogram reference points for determining
             cutoffs
         color_percentile: high reference point for an individual color band
-
+        return_ubyte: Bool.  If True, external methods return uint8 images.
+        
     External methods:
-        correct: Rescale intensities, enhance contrast, and balance colors.
-        brightness_and_contrast: Rescale intensities and enhance contrast.
-        correct_and_reduce:  Run correct() and return a uint8 array.
-        expand_and_reduce: Rescale intensities and return a uint8 array.
-        mincolor_and_reduce: Rescale intensities, enhance contrast, and
-            perform minimal blue darkpoint color correction; return unit8.
+        correct: Enhance contrast and balance colors.
+        enhance_contrast:  Enhance contrast.
+        linearly_enhance_contrast: Perform linear-only contrast stretching.
+        dra: Perform a band-wise linear histogram rescaling.
+        mincolor_correct: Enhance contrast and perform minimal (blue dark
+            point) color correction.
     """
         
     def __init__(self,
@@ -91,57 +108,50 @@ class ColorCorrect(object):
         self.gamma = gamma
         self.percentiles = percentiles
         self.color_percentiles = color_percentiles
+        self.return_ubyte = return_ubyte
 
+    @reduce_to_ubyte
     def correct(self, img):
-        """Rescale image intensities, enhance contrast, and balance colors."""
-        print('Shifting white and black points.')
+        """Enhance contrast and balance colors."""
         img = self._expand_histogram(img)
-        print('Adjusting contrast.')
-        img = self._adjust_contrast(img)
-        print('Balancing color bright and dark points.')
+        img = self._gamma_transform(img)
         img = self._balance_colors(img)
         return img
 
-    def brightness_and_contrast(self, img):
-        """Rescale image intensities and enhance contrast."""
+    @reduce_to_ubyte
+    def enhance_contrast(self, img):
+        """Enhance contrast."""
         img = self._expand_histogram(img)
-        img = self._adjust_contrast(img)
+        img = self._gamma_transform(img)
         return img
     
-    def correct_and_reduce(self, img):
-        """Rescale image intensities, enhance contrast, and balance colors.
+    @reduce_to_ubyte
+    def linearly_enhance_contrast(self, img):
+        """Perform linear-only contrast stretching."""
+        return self._expand_histogram(img)
 
-        Returns: uint8 array
+    @reduce_to_ubyte
+    def dra(self, img):
+        """Perform a band-wise linear histogram rescaling.
+
+        This routine reproduces DG DRA when:
+            self.cut_frac = 1
+            self.color_percentiles = (2,98)
+            
         """
-        img = self.correct(img)
-        return skimage.img_as_ubyte(img)
+        return self._balance_colors(img)
 
-    def expand_and_reduce(self, img):
-        """Rescale image intensities only.
-
-        Returns: unit8 array
+    @reduce_to_ubyte
+    def mincolor_correct(self, img):
+        """Enhance contrast and perform minimal (blue dark point) color
+            correction.
         """
-        img = self._expand_histogram(img)
-        return skimage.img_as_ubyte(img)
-
-    def mincolor_and_reduce(self, img):
-        """Rescale intensities, enhance contrast, perform minimal
-            blue darkpoint color correction.
-
-        Returns: unit8 array
-        """
-        img = self.brightness_and_contrast(img)
+        img = self.enhance_contrast(img)
         img = self._shift_blue_darkpoint(img)
-        return skimage.img_as_ubyte(img)
-
-    def dra_and_reduce(self, img):
-        self.cut_frac = 1
-        self.color_percentiles = (2,98)
-        img = self._balance_colors(img)
-        return skimage.img_as_ubyte(img)
+        return img
 
     def _expand_histogram(self, img):
-        """Expand histogram reference values to white and black."""
+        """Linearly rescale histogram."""
         lowcut, highcut = np.percentile(img[np.where(img > 0)],
                                         self.percentiles)
         highcut = self._renorm_highcut(highcut, img.dtype)
@@ -149,12 +159,12 @@ class ColorCorrect(object):
         expanded = exposure.rescale_intensity(img, in_range=(lowcut, highcut))
         return expanded
     
-    def _adjust_contrast(self, img):
+    def _gamma_transform(self, img):
         """Peform gamma adjustment."""
         return exposure.adjust_gamma(img, gamma=self.gamma)
 
     def _balance_colors(self, img):
-        """Shift reference values for each color channel."""
+        """Linearly rescale histogram for each color channel separately."""
         balanced = np.zeros(img.shape, dtype=img.dtype)
         for n, band in enumerate(img.T):
             lowcut, highcut = np.percentile(band[np.where(band > 0)],
@@ -165,7 +175,7 @@ class ColorCorrect(object):
                 band, in_range=(lowcut, highcut))
         return balanced
 
-    def _shift_blue_darkpoint(self, img):
+    def _shift_blue_darkpoint(self, img, lowcut_frac=.5):
         """Shift the blue dark reference value only.
 
         This is a minimal color correction to remove atmospheric scattering,
@@ -176,7 +186,7 @@ class ColorCorrect(object):
         blue = img.T[2]
         lowcut, _ = np.percentile(blue[np.where(blue > 0)],
                                   self.color_percentiles)
-        lowcut = self._renorm_lowcut(lowcut)
+        lowcut *= lowcut_frac
         balanced.T[2] = exposure.rescale_intensity(
             blue, in_range=(lowcut, self._get_max(img.dtype)))
         return balanced
@@ -203,20 +213,6 @@ class ColorCorrect(object):
             raise TypeError('Expecting dtype uint16, uint8 or float32.')
         return img_max
 
-# instantiations tuned to produce various output styles:
-
-STYLES = {
-    # low contrast:
-    'matte': ColorCorrect(cut_frac=.65, gamma=.6).correct_and_reduce,
-    # default:
-    'contrast': ColorCorrect().correct_and_reduce,
-    # reproduces DG DRA; oversaturated, very high contrast:
-    'dra': ColorCorrect(cut_frac=1, color_percentiles=(2,98)).dra_and_reduce,
-    # may perform well on scenes whose colors naturally are imbalanced:
-    'desert': ColorCorrect().mincolor_and_reduce,
-    # for another take on Planet 'visual':
-    'expanded': ColorCorrect().expand_and_reduce
-}
     
 def coarse_adjust(img):
     """Convert to uint16 and do a rough bandwise histogram expansion.
@@ -245,6 +241,21 @@ def coarse_adjust(img):
     return coarsed 
 
 
+# instantiations tuned to produce various output styles:
+
+STYLES = {
+    # default:
+    'contrast': ColorCorrect(cut_frac=.75, gamma=.75).correct,
+    # low contrast:
+    'matte': ColorCorrect(cut_frac=.65, gamma=.6).correct,
+    # reproduces DG DRA; oversaturated, very high contrast:
+    'dra': ColorCorrect(cut_frac=1, color_percentiles=(2,98)).dra,
+    # may perform well on scenes whose colors naturally are imbalanced:
+    'desert': ColorCorrect(cut_frac=.95).mincolor_correct,
+    # for another take on Planet 'visual':
+    'expanded': ColorCorrect(cut_frac=.75).linearly_enhance_contrast
+}
+
 if __name__ == '__main__':
     usage_msg = ('Usage: python color.py image.tif [-c]\n' +
                  'The -c flag indicates a preliminary coarse adjust for ' +
@@ -256,8 +267,8 @@ if __name__ == '__main__':
         sys.exit('{}\n{}'.format(repr(e), usage_msg))
     if '-c' in sys.argv:
         img = coarse_adjust(img)
-    #for style, operator in STYLE_OPERATORS.items():
-    for style, operator in {'dra': STYLES['dra']}.items():
+    for style, operator in STYLES.items():
+    #for style, operator in {'desert': STYLES['desert']}.items():
         corrected = operator(img)
         plt.imsave(filename.split('.')[0] + style + '.png', corrected)
 
