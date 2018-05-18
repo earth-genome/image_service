@@ -14,5 +14,10 @@
 	"ortho_visual",
 	"visual"
     ],
-    "write_styles": []
+    "write_styles": [
+        "matte",
+	"contrast",
+	"dra",
+	"desert"
+    ]
 }
