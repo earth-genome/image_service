@@ -4,13 +4,6 @@ API ref: https://planetlabs.github.io/planet-client-python/index.html
 
 Class PlanetGrabber: A class to grab an image respecting given specs.
 
-    External methods:
-        __call__: Grab most recent available images consistent with specs.
-        search:  Given a boundingbox, search for relevant image records.
-        search_clean: Search and return streamlined image records.
-        search_latlon:  Given lat, lon, search for relevant image records.
-        search_latlon_clean:  Search and return streamlined image records.
-
 Usage with default specs (defaults except for N_images, write_styles):
 > bbox = geobox.bbox_from_scale(37.77, -122.42, 1.0)
 > g = PlanetGrabber()
@@ -56,6 +49,7 @@ import tifffile
 
 from geobox import geobox
 from postprocessing import color
+from postprocessing import gdal_routines
 
 # Default catalog and image parameters:
 DEFAULT_SPECS_FILE = os.path.join(os.path.dirname(__file__),
@@ -64,7 +58,7 @@ with open(DEFAULT_SPECS_FILE, 'r') as f:
     DEFAULT_SPECS = json.load(f)
 
 # For asynchronous handling of scene activation and download, in seconds:
-WAITTIME = 15 
+WAITTIME = 15
 
 class PlanetGrabber(object):
     
@@ -128,9 +122,8 @@ class PlanetGrabber(object):
             for future in asyncio.as_completed(tasks):
                 asset, record = await future
                 print('Retrieved {}\nDownloading...'.format(record['id']))
-                path = self.download(
-                    asset, _build_filename(bbox, record, file_header))
-                print('Done.')
+                path = self.download(asset, file_header)
+                print('Done.', flush=True)
                 written = self.reprocess(bbox, record, path, **specs)
                 recs_written.append(written)
             return recs_written
@@ -180,16 +173,14 @@ class PlanetGrabber(object):
         assets = self._client.get_assets_by_id(
             record['properties']['item_type'], record['id']).get()
         asset, asset_type = self._activate(assets)
-        # TODO: remove counter / debugging print statements
-        counter = 0 
+        print('Activating {}: {}'.format(record['id'], asset_type))
+        print('This could take several minutes.', flush=True)
         while not self._is_active(asset):
             await asyncio.sleep(WAITTIME)
             assets = self._client.get_assets_by_id(
                 record['properties']['item_type'], record['id']).get()
             asset = assets[asset_type]
-            counter += 1
-            print('{}th wait cycle on asset:\n{}'.format(counter, asset))
-        record.update({'asset_type': asset_type})
+        record['properties'].update({'asset_type': asset_type})
         return asset, record
 
     def _activate(self, assets):
@@ -199,7 +190,6 @@ class PlanetGrabber(object):
             asset_type = asset_types.pop()
             if asset_type in assets.keys():
                 asset = assets[asset_type]
-                print('Activating:\n{}'.format(asset))
                 client.activate(asset)
                 break
         return asset, asset_type
@@ -208,15 +198,14 @@ class PlanetGrabber(object):
         """Check asset activation status."""
         return True if asset['status'] == 'active' else False
 
-    def download(self, asset, filename):
+    def download(self, asset, file_header):
         """Download asset and write to filename."""
         body = self._client.download(asset).get_body()
-        body.write(file=filename)
-        return filename
+        path = file_header + body.name
+        body.write(file=path)
+        return path
 
-    # WIP.  Need to add, potentially, merging of tiles, cropping,
-    # handling for analytic asset_type
-    def reprocess(self, bbox, record, path, **specs):
+    def reprocess(self, bbox, record, path, write_styles=[], **specs):
         """Reprocess downloaded images and clean records to return.
 
         Depending on asset type, this function:
@@ -227,25 +216,46 @@ class PlanetGrabber(object):
 
         Returns: Updated record
         """
-        if (record['asset_type'] == 'visual' or
-            record['asset_type'] == 'ortho_visual'):
-            outpath = path.split('.tif')[0] + 'LZW.tif'
-            subprocess.call(['gdal_translate', '-co', 'COMPRESS=LZW',
-                             '-b', '1', '-b', '2', '-b', '3',
-                             path, outpath])
-            os.remove(path)
-            paths = [outpath]
+        paths = []
+        styles = [style.lower() for style in write_styles]
+        
+        path = gdal_routines.crop(path, bbox)
+        path = gdal_routines.reband(path, _get_bandmap(record))
+        print('\nStaging at {}\n'.format(path), flush=True)
+
+        def correct_and_write(img, path, style):
+            """Correct color and write to file."""
+            corrected = color.STYLES[style](img)
+            outpath = path.split('LZW.tif')[0] + '-' + style + '.png'
+            print('\nSaving to {}\n'.format(outpath), flush=True)
+            plt.imsave(outpath, corrected)
             
+        img = tifffile.imread(path)
+        if (record['properties']['asset_type'] == 'visual' or
+            record['properties']['asset_type'] == 'ortho_visual'):
+
+            # minimal tweaks, since Planet visual is already corrected:
+            paths.append(path)
+            paths.append(correct_and_write(img, path, 'expanded'))
+            if 'dra' in styles:
+                paths.append(correct_and_write(img, path, 'dra'))
+
+        elif record['properties']['asset_type'] == 'analytic':
+            for style in styles:
+                if style in color.STYLES.keys():
+                    paths.append(correct_and_write(img, path, style))
+            
+            # if no other styles, keep the raw geotiff
+            if paths:
+                os.remove(path)
+            else:
+                paths.append(path)  
+
         cleaned = _clean_record(record)
         cleaned.update({'paths': paths})
         return cleaned
 
     # Functions to enforce certain specs.
-
-    def _check_highres(self, bbox):
-        """Allow highest resolution when bbox smaller than pansharp_scale."""
-        size = np.mean(geobox.get_side_distances(bbox))
-        return True if size < self.specs['pansharp_scale'] else False
 
     def _well_overlapped(self, bbox, record):
         """Check whether bbox and record overlap at level min_intersect."""
@@ -289,19 +299,33 @@ def _clean_record(record):
     cleaned['clouds'] *= 100
     return cleaned   
     
-def _build_filename(bbox, record, file_header=''):
-    """Build a filename for image output.
-
-    Uses: catalog id and date, centroid lat/lon, and optional file_header
-
-    Return: filename prefix, ready to append '.png', '.tif', etc.
-    """
-    tags = ('bbox{:.4f}_{:.4f}_{:.4f}_{:.4f}'.format(*bbox.bounds))
-    filename = (file_header + record['id'] + '_' +
-                record['properties']['acquired'] + tags +
-                record['asset_type'] + '.tif')
-    return filename
-
+def _get_bandmap(record):
+    """Find the band order for R-G-B bands for the input record."""
+    bandmaps = {   
+        'PSScene3Band': {
+            'visual': (1, 2, 3),
+            'analytic': (1, 2, 3)
+        },
+        'PSOrthoTile': {
+            'visual': (1, 2, 3),
+            'analytic': (3, 2, 1)
+        },
+        'REOrthoTile': {
+            'visual': (1, 2, 3),
+            'analytic': (3, 2, 1)
+        },
+        'SkySatScene': {
+            'ortho_visual': (3, 2, 1)
+        }
+    }
+    item_type = record['properties']['item_type']
+    asset_type = record['properties']['asset_type']
+    try:
+        bands = bandmaps[item_type][asset_type]
+    except KeyError as e:
+        raise KeyError('{}: Bandmap not defined for {}:{}'.format(
+            repr(e), item_type, asset_type))
+    return bands
 
 
 
