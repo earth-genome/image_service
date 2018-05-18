@@ -48,10 +48,9 @@ While _expand_histogram and _adjust_contrast can be inverted, roughly, by invert
 Images that arrive with uint16 range are manipulated as such, to preserve
 frequency resolution, with the option (via correct_and_reduce) to convert to
 uint8 for a lossy data compression at the end.  If conversion to uint8
-happens before histogram expansion, in particular, the image can be effectively
-posterized with only O(10) distinct values in a band.
+happens before histogram expansion, in particular, the image can be effectively posterized with only O(10) distinct values in a band.
 
-Given the above, the percentiles should be fixed and are written as such into the __init__ function.  The tuneable parameters are the cut_frac and gamma.  Some reasonable examples are given in STYLE_PARAMS below.  For the same numerical variation from these values, cut_frac has a larger impact on contrast than gamma. Larger cut_frac means higher contrast, and typically should be set off with higher gamma (decreasing the gamma effect), and vice-versa.   
+Given the above, the percentiles should be fixed (except for special off-label use cases, cf. dra below). The tuneable parameters are the cut_frac and gamma.  Some reasonable examples are given in STYLES below.  For the same numerical variation from these values, cut_frac has a larger impact on contrast than gamma. Larger cut_frac means higher contrast, and typically should be set off with higher gamma (decreasing the gamma effect), and vice-versa.   
 
 """
 import numpy as np
@@ -62,40 +61,36 @@ import skimage
 from skimage import exposure
 import tifffile
 
-STYLE_PARAMS = {
-    'matte': {
-        'cut_frac': .65,
-        'gamma': .6
-    },
-    'contrast': {
-        'cut_frac': .75,
-        'gamma': .75
-    }
-}
-
 class ColorCorrect(object):
     """Perform basic color correction on an image.
 
     Attributes:
-        percentiles: high/low histogram reference points for determining
-            cutoffs
-        color_percentile: high reference point for an individual color band
         cut_frac: factor by which to shift reference pixel values before
             applying cutoffs (see notes above)
         gamma: gamma correction exponent
+        percentiles: high/low histogram reference points for determining
+            cutoffs
+        color_percentile: high reference point for an individual color band
 
     External methods:
-        brightness_and_contrast: Rescale intensities and enhance contrast.
         correct: Rescale intensities, enhance contrast, and balance colors.
-        __call__: Runs correct() and then returns a uint8 array.
-
+        brightness_and_contrast: Rescale intensities and enhance contrast.
+        correct_and_reduce:  Run correct() and return a uint8 array.
+        expand_and_reduce: Rescale intensities and return a uint8 array.
+        mincolor_and_reduce: Rescale intensities, enhance contrast, and
+            perform minimal blue darkpoint color correction; return unit8.
     """
         
-    def __init__(self, cut_frac=.75, gamma=.75):
-        self.percentiles = (1, 99)
-        self.color_percentiles = (5, 95)
+    def __init__(self,
+                 cut_frac=.75,
+                 gamma=.75,
+                 percentiles=(1,99),
+                 color_percentiles=(5,95),
+                 return_ubyte=True):
         self.cut_frac = cut_frac
         self.gamma = gamma
+        self.percentiles = percentiles
+        self.color_percentiles = color_percentiles
 
     def correct(self, img):
         """Rescale image intensities, enhance contrast, and balance colors."""
@@ -107,6 +102,12 @@ class ColorCorrect(object):
         img = self._balance_colors(img)
         return img
 
+    def brightness_and_contrast(self, img):
+        """Rescale image intensities and enhance contrast."""
+        img = self._expand_histogram(img)
+        img = self._adjust_contrast(img)
+        return img
+    
     def correct_and_reduce(self, img):
         """Rescale image intensities, enhance contrast, and balance colors.
 
@@ -115,11 +116,29 @@ class ColorCorrect(object):
         img = self.correct(img)
         return skimage.img_as_ubyte(img)
 
-    def brightness_and_contrast(self, img):
-        """Rescale image intensities and enhance contrast."""
+    def expand_and_reduce(self, img):
+        """Rescale image intensities only.
+
+        Returns: unit8 array
+        """
         img = self._expand_histogram(img)
-        img = self._adjust_contrast(img)
-        return img
+        return skimage.img_as_ubyte(img)
+
+    def mincolor_and_reduce(self, img):
+        """Rescale intensities, enhance contrast, perform minimal
+            blue darkpoint color correction.
+
+        Returns: unit8 array
+        """
+        img = self.brightness_and_contrast(img)
+        img = self._shift_blue_darkpoint(img)
+        return skimage.img_as_ubyte(img)
+
+    def dra_and_reduce(self, img):
+        self.cut_frac = 1
+        self.color_percentiles = (2,98)
+        img = self._balance_colors(img)
+        return skimage.img_as_ubyte(img)
 
     def _expand_histogram(self, img):
         """Expand histogram reference values to white and black."""
@@ -135,7 +154,7 @@ class ColorCorrect(object):
         return exposure.adjust_gamma(img, gamma=self.gamma)
 
     def _balance_colors(self, img):
-        """Shift reference value to max brightness for each color channel."""
+        """Shift reference values for each color channel."""
         balanced = np.zeros(img.shape, dtype=img.dtype)
         for n, band in enumerate(img.T):
             lowcut, highcut = np.percentile(band[np.where(band > 0)],
@@ -144,6 +163,22 @@ class ColorCorrect(object):
             lowcut = self._renorm_lowcut(lowcut)
             balanced.T[n] = exposure.rescale_intensity(
                 band, in_range=(lowcut, highcut))
+        return balanced
+
+    def _shift_blue_darkpoint(self, img):
+        """Shift the blue dark reference value only.
+
+        This is a minimal color correction to remove atmospheric scattering,
+            for scenes whose colors naturally are imbalanced (e.g. desert).
+        """
+        balanced = np.zeros(img.shape, dtype=img.dtype)
+        balanced.T[:2] = img.T[:2]
+        blue = img.T[2]
+        lowcut, _ = np.percentile(blue[np.where(blue > 0)],
+                                  self.color_percentiles)
+        lowcut = self._renorm_lowcut(lowcut)
+        balanced.T[2] = exposure.rescale_intensity(
+            blue, in_range=(lowcut, self._get_max(img.dtype)))
         return balanced
     
     def _renorm_lowcut(self, cut):
@@ -168,6 +203,20 @@ class ColorCorrect(object):
             raise TypeError('Expecting dtype uint16, uint8 or float32.')
         return img_max
 
+# instantiations tuned to produce various output styles:
+
+STYLES = {
+    # low contrast:
+    'matte': ColorCorrect(cut_frac=.65, gamma=.6).correct_and_reduce,
+    # default:
+    'contrast': ColorCorrect().correct_and_reduce,
+    # reproduces DG DRA; oversaturated, very high contrast:
+    'dra': ColorCorrect(cut_frac=1, color_percentiles=(2,98)).dra_and_reduce,
+    # may perform well on scenes whose colors naturally are imbalanced:
+    'desert': ColorCorrect().mincolor_and_reduce,
+    # for another take on Planet 'visual':
+    'expanded': ColorCorrect().expand_and_reduce
+}
     
 def coarse_adjust(img):
     """Convert to uint16 and do a rough bandwise histogram expansion.
@@ -207,8 +256,8 @@ if __name__ == '__main__':
         sys.exit('{}\n{}'.format(repr(e), usage_msg))
     if '-c' in sys.argv:
         img = coarse_adjust(img)
-    for style, params in STYLE_PARAMS.items():
-        cc = ColorCorrect(**params)
-        corrected = cc.correct_and_reduce(img)
-        plt.imsave(filename.split('.')[0] + 'cf{}g{}.png'.format(
-            params['cut_frac'], params['gamma']), corrected)
+    #for style, operator in STYLE_OPERATORS.items():
+    for style, operator in {'dra': STYLES['dra']}.items():
+        corrected = operator(img)
+        plt.imsave(filename.split('.')[0] + style + '.png', corrected)
+
