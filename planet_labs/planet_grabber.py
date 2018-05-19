@@ -108,9 +108,8 @@ class PlanetGrabber(object):
         records = [r for r in records if self._well_overlapped(bbox, r)]
 
         retrieve_tasks = [
-            asyncio.ensure_future(
-                self.retrieve_asset(record))
-            for record in records[-specs['N_images']:]
+            asyncio.ensure_future(self.retrieve_asset(record))
+                for record in records[-specs['N_images']:]
         ]
 
         async def async_handler(tasks, bbox, file_header, **specs):
@@ -198,7 +197,7 @@ class PlanetGrabber(object):
             asset_type = asset_types.pop()
             if asset_type in assets.keys():
                 asset = assets[asset_type]
-                client.activate(asset)
+                self._client.activate(asset)
                 break
         return asset, asset_type
             
@@ -238,6 +237,7 @@ class PlanetGrabber(object):
             outpath = path.split('LZW.tif')[0] + '-' + style + '.png'
             print('\nStaging at {}\n'.format(outpath), flush=True)
             plt.imsave(outpath, corrected)
+            return outpath
             
         img = tifffile.imread(path)
         if (record['properties']['asset_type'] == 'visual' or
