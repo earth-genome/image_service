@@ -65,6 +65,7 @@ pull_for_story and pull_for_wire, the story core_locations are updated with
 the records, and the story is reposted to the database.
 """
 
+import asyncio
 import datetime
 import json
 import os
@@ -82,13 +83,10 @@ from grab_imagery.geobox import geobox
 from grab_imagery.geobox import conversions
 from grab_imagery.planet_labs import planet_grabber
 
-PROVIDERS = {
-    'digital_globe': {
-        'grabber': dg_grabber.DGImageGrabber,
-    },
-    'planet': {
-        'grabber': planet_grabber.PlanetGrabber
-    }
+
+PROVIDER_CLASSES = {
+    'digital_globe': dg_grabber.DGImageGrabber,
+    'planet': planet_grabber.PlanetGrabber
 }
 
 # Default image specs:
@@ -118,8 +116,8 @@ class AutoGrabber(object):
         pull_for_story: pull images for all bboxes in a DBItem story
 
     Attributes:
-        providers: dict with class instantiators for pulling images,
-            from modules in this repo; default PROVIDERS above
+        provider_classes: dict with class instantiators for pulling images,
+            from modules in this repo; default PROVIDER_CLASSES above
         staging_dir: directory for local staging of images
         image_specs: dict of catalog search and image size specs
         bucket_tool: class instance to access Google Cloud storage bucket
@@ -127,16 +125,16 @@ class AutoGrabber(object):
     
     def __init__(self,
                  bucket_name,
-                 provider_names=PROVIDERS.keys(),
+                 providers=PROVIDER_CLASSES.keys(),
                  staging_dir=STAGING_DIR,
                  specs_filename=None,
                  **image_specs):
         
-        self.providers = {k:v for k,v in PROVIDERS.items()
-                          if k in provider_names}
-        if not self.providers:
+        self.provider_classes = {k:v for k,v in PROVIDER_CLASSES.items()
+                          if k in providers}
+        if not self.provider_classes:
             raise ValueError('Available providers: {}'.format(
-                list(PROVIDERS.keys())))
+                list(PROVIDER_CLASSES.keys())))
         
         self.staging_dir = staging_dir
         if not os.path.exists(self.staging_dir):
@@ -168,34 +166,54 @@ class AutoGrabber(object):
         """
         specs = self.image_specs.copy()
         specs.update(image_specs)
-        bbox, providers = self._enforce_size_specs(bbox)
+        bbox = self._enforce_size_specs(bbox)
 
-        records = []
-        while providers:
-            provider = providers.pop()
-            grabber = provider['grabber'](**specs)
-            print('Pulling for bbox {}.\n'.format(bbox.bounds))
-            new_recs = grabber(
-                bbox, file_header=os.path.join(self.staging_dir, ''), **specs)
-            for r in new_recs:
-                urls = self._upload(r.pop('paths'))
-                r.update({'urls': urls})
-            records += new_recs
-            # Break when a full N_image stack is pulled from a single provider
-            if len(new_recs) < specs['N_images']:
-                break
+        output_records = []
+        print('Pulling for bbox {}.\n'.format(bbox.bounds))
+        for grabber_class in self.provider_classes.values():
+            grabber = grabber_class(**specs)
+            records = grabber.search(bbox)[::-1]
+            records = [r for r in records if grabber._well_overlapped(bbox, r)]
+
+            retrieve_tasks = [
+                asyncio.ensure_future(grabber.retrieve_asset(record))
+                    for record in records[-specs['N_images']:]
+            ]
+
+            async def async_handler(tasks, bbox, file_header, **specs):
+                recs_written = []
+                for future in asyncio.as_completed(tasks):
+                    asset, record = await future
+                    print('Retrieved {}\nDownloading...'.format(
+                        record['properties']), flush=True)
+                    path = grabber.download(asset, file_header)
+                    written = grabber.reprocess(bbox, record, path, **specs)
+                    urls = self._upload(written.pop('paths'))
+                    written.update({'urls': urls})
+                    recs_written.append(written)
+                return recs_written
+
+            loop = asyncio.get_event_loop()
+            recs_written = loop.run_until_complete(
+                async_handler(
+                    retrieve_tasks, bbox,
+                    os.path.join(self.staging_dir, ''), **specs))
+
+            output_records += recs_written
             
-        print('Pulled {} scene(s).\n'.format(len(records)))
-        return records
+        print('Pulled {} scene(s).\n'.format(len(output_records)))
+        return output_records
 
-    def pull_by_id(self, provider, catalogID, bbox, **image_specs):
+    def pull_by_id(self, provider, bbox, catalogID, item_type=None,
+                   **image_specs):
         """Pull image for a given catalogID and post to bucket."""
         specs = self.image_specs.copy()
         specs.update(image_specs)
         
-        grabber = self.providers[provider]['grabber'](**specs)
+        grabber = self.provider_classes[provider](**specs)
         record = grabber.grab_by_id(
-            catalogID, bbox, file_header=os.path.join(self.staging_dir, ''),
+            bbox, catalogID, item_type, 
+            file_header=os.path.join(self.staging_dir, ''),
             **specs)
         urls = self._upload(record.pop('paths'))
         record.update({'urls': urls})
@@ -242,7 +260,7 @@ class AutoGrabber(object):
                 urls.append(url)
             except Exception as e:
                 print('Bucket error for {}: {}\n'.format(path, repr(e)))
-                os.remove(path)
+            os.remove(path)
         print('Uploaded images:\n{}\n'.format(urls))
         return urls
 
@@ -272,8 +290,7 @@ class AutoGrabber(object):
         deltalon = conversions.longitude_from_dist(delx, lat) 
         bbox = geobox.make_bbox(lat, lon, deltalat, deltalon)
 
-        # WIP: providers to be ordered according to bbox size
-        return bbox, [self.providers['digital_globe']]
+        return bbox
 
         
 class BulkGrabber(AutoGrabber):
