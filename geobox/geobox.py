@@ -48,12 +48,13 @@ def bbox_from_scale(lat, lon, scale):
 def square_bbox_from_scale(lat, lon, scale):
     """Make a bounding box given lat/lon and scale in km.
 
-    This routine reverses the compression in latitude from geoprojection
-    by increasing the increment in latitude by 1/cos(lat).
+    This routine reverses the expansion in latitude due to EPSG:4326
+    projection by decreasing the increment in longitude by cos(lat).
+    (E.g. Digital Globe uses EPSG:4326 by default.)
     """
-    deltalat = conversions.latitude_from_dist(scale)/np.cos(
-        np.radians(np.abs(lat)))
-    deltalon = conversions.longitude_from_dist(scale, lat)
+    deltalat = conversions.latitude_from_dist(scale)
+    deltalon = (conversions.longitude_from_dist(scale, lat) *
+        np.cos(np.radians(np.abs(lat))))
     bbox = make_bbox(lat, lon, deltalat, deltalon)
     return bbox
 
