@@ -6,53 +6,92 @@ import numpy as np
 
 from geobox import geobox
 
-def crop(geotiff_fname, bbox, clean=True):
-    """Crop GeoTiff to boundingbox.
+def reproject(filename, epsg_code, clean=True):
+    """Reproject GeoTiff to a common projection.
 
     Arguments:
-        geotiff_fname: GeoTiff filename
-        bbox: A shapely box.
+        filename: GeoTiff filename
+        epsg_code: integer EPSG code (e.g. 4326)
+        clean: True/False to delete the input file. 
 
-    Output: Writes a new GeoTiff; if clean, deletes the input file.
+    Output: Writes a GeoTiff.
+
+    Returns: New GeoTiff filename
+    """
+    targetname = filename.split('.tif')[0] + '-reproj.tif'
+    commands = [
+        'gdalwarp',
+        '-t_srs', 'EPSG:'+str(epsg_code),
+        '-r', 'bilinear',
+        '-co', 'COMPRESS=LZW',
+        filename, targetname]
+    subprocess.call(commands)
+    if clean:
+        os.rename(targetname, filename)
+        return filename
+    else:
+        return targetname
+
+def crop_and_reband(filename, bbox, output_bands, clean=True):
+    """Crop GeoTiff to boundingbox and set output_bands.
+
+    Arguments:
+        filename: GeoTiff filename
+        bbox: A shapely box.
+        output_bands: A list of bands by number (indexed from 1)
+        clean: True/False to delete the input file. 
+
+    Output: Writes a GeoTiff.
 
     Returns: New GeoTiff filename.
     """
     tags = ('_bbox{:.4f}_{:.4f}_{:.4f}_{:.4f}'.format(*bbox.bounds))
-    outname = geotiff_fname.split('.tif')[0] + tags + '.tif'
+    targetname = filename.split('.tif')[0] + tags + '.tif'
     bounds = geobox.shapely_to_gdal_box(bbox)
+    dressed_bands = np.asarray([('-b', str(b)) for b in output_bands])
     commands = [
         'gdal_translate',
         '-projwin_srs', 'EPSG:4326',
         '-projwin', *[str(b) for b in bounds],
-        geotiff_fname, outname
+        *dressed_bands.flatten(),
+        '-co', 'COMPRESS=LZW',
+        filename, targetname
     ]
     subprocess.call(commands)
     if clean:
-        os.remove(geotiff_fname)
-    return outname
+        os.remove(filename)
+    return targetname
 
-def reband(geotiff_fname, output_bands, clean=True):
-    """Write a new GeoTiff with only selected output_bands.
+
+def merge(filenames, clean=True):
+    """Merge input GeoTiffs.
 
     Arguments:
-        geotiff_fname: GeoTiff filename
-        output_bands: A list of bands by number (indexed from 1) 
+        filenames: GeoTiff filenames
+        clean: True/False to delete the input file. 
 
-    Output: Writes an LZW-compressed GeoTiff; if clean, deletes the input file.
+    Output: Writes a GeoTiff
 
-    Returns: New GeoTiff filename
+    Returns: New GeoTiff filename (based on the first input GeoTiff name) 
     """
-    outname = geotiff_fname.split('.tif')[0] + 'LZW.tif'
-    dressed_bands = np.asarray([('-b', str(b)) for b in output_bands])
+    targetname = filenames[0].split('.tif')[0] + '-merged.tif'
+    # To keep this out of memory, create the target file with gdal_merge
+    # but then copy data with gdalwarp:
     commands = [
-        'gdal_translate',
+        'gdal_merge.py',
+        '-createonly',
         '-co', 'COMPRESS=LZW',
-        *dressed_bands.flatten(),
-        geotiff_fname, outname
+        '-of', 'GTiff',
+        '-o', targetname,
+        *filenames
     ]
     subprocess.call(commands)
+    commands = [
+        'gdalwarp',
+        '--config', 'GDAL_CACHEMAX', '1000', '-wm', '1000',
+        *filenames, targetname]
+    subprocess.call(commands)
     if clean:
-        os.remove(geotiff_fname)
-    return outname
-
-    
+        for filename in filenames:
+            os.remove(filename)
+    return targetname
