@@ -122,7 +122,7 @@ class PlanetGrabber(object):
             
         records = self.search(bbox)[::-1]
         scenes = self._group_into_scenes(bbox, records, **specs)
-        return scenes
+        #return scenes
 
         retrieve_tasks = [asyncio.ensure_future(self._retrieve_for_scene(scene))
                           for scene in scenes]
@@ -243,23 +243,24 @@ class PlanetGrabber(object):
         """
         item_type, asset_type = _get_scene_types(records)
         source_epsg_codes = [_get_epsg_code([record]) for record in records]
-        target_epsg_code = _get_epsg_code(records)
+        target_epsg_code = _get_epsg_code(_sort_by_overlap(bbox, records))
         output_bands = _get_bandmap(item_type, asset_type)
+        footprint = bbox.intersection(_get_footprint(records))
         
         scene_record = _merge_records(
             [_clean_record(record) for record in records])
         scene_path = self.geo_process(
-            bbox, paths, source_epsg_codes, target_epsg_code, output_bands)
+            footprint, paths, source_epsg_codes, target_epsg_code, output_bands)
         output_paths = self.color_process(scene_path, asset_type, **specs)
         scene_record.update({'paths': output_paths})
         return scene_record
 
-    def geo_process(self, bbox, paths, source_epsg_codes, target_epsg_code,
+    def geo_process(self, footprint, paths, source_epsg_codes, target_epsg_code,
                     output_bands):
-        """Reproject, crop to bbox, extract output bands, merge.
+        """Reproject, crop to footprint, extract output bands, merge.
 
         Arguments:
-            bbox: shapely box
+            footprint: shapely polygon
             paths: list of paths to component images of a scene
             records: image records
             source_epsg_code: list of integer EPSG codes
@@ -273,13 +274,14 @@ class PlanetGrabber(object):
         for path, source_code in zip(paths, source_epsg_codes):
             if source_code != target_epsg_code:
                 path = gdal_routines.reproject(path, target_epsg_code)
-            path = gdal_routines.crop_and_reband(path, bbox, output_bands)
+            path = gdal_routines.crop(path, footprint)
             reshaped.append(path)
          
         if len(reshaped) > 1:
             scene_path = gdal_routines.merge(reshaped)
         else:
             scene_path = reshaped[0]
+        scene_path = gdal_routines.reband(scene_path, output_bands)
         return scene_path
         
     def color_process(self, path, asset_type, write_styles=[], **specs):
@@ -287,13 +289,13 @@ class PlanetGrabber(object):
 
         Returns:  Updated record with paths to color-corrected images.
         """
-        output_paths = []
+        output_paths = [path]
         styles = [style.lower() for style in write_styles]
 
         def correct_and_write(img, path, style):
             """Correct color and write to file."""
             corrected = color.STYLES[style](img)
-            outpath = path.split('LZW.tif')[0] + '-' + style + '.png'
+            outpath = path.split('.tif')[0] + '-' + style + '.png'
             print('\nStaging at {}\n'.format(outpath), flush=True)
             plt.imsave(outpath, corrected)
             return outpath
@@ -322,97 +324,117 @@ class PlanetGrabber(object):
         records = json.loads(json.dumps(records))
         while len(scenes) < specs['N_images']:
             groups = self._pop_day(records)
-            groups = self._filter_by_overlaps(bbox, groups)
-            groups = self._strip_redundancy(groups)
+            groups = self._filter_by_overlap(bbox, groups)
+            groups = self._filter_copies(groups)
             group_records = [v['records'] for v in groups.values()]
             while group_records and len(scenes) < specs['N_images']:
                 scenes.append(group_records.pop())
         return scenes
 
     def _pop_day(self, records):
-        """Pop a day's worth of records and sort by item type.
+        """Pop a day's worth of records and sort by satellite id and item type.
 
-        Argument records:  Image records sorted by date.
+        Argument records:  Image records sorted by date
 
-        Return: A dict of groups of records keyed by item_type
+        Output:  The day's records are popped from input variable records.
+
+        Returns: A dict of groups of records for the day
         """
         record = records.pop()
         item_type = record['properties']['item_type']
+        sat_id = record['properties']['satellite_id']
         date0 = dateutil.parser.parse(record['properties']['acquired']).date()
 
-        groups = {item_type: {'records': [record]}}
+        groups = {(sat_id, item_type): {'records': [record]}}
         while True:
             record = records.pop()
             date = dateutil.parser.parse(
                 record['properties']['acquired']).date()
             if date == date0:
                 item_type = record['properties']['item_type']
+                sat_id = record['properties']['satellite_id']
                 try: 
-                    groups[item_type]['records'].append(record)
+                    groups[(sat_id, item_type)]['records'].append(record)
                 except KeyError:
-                    groups.update({item_type: {'records': [record]}})
+                    groups.update({(sat_id, item_type): {'records': [record]}})
             else:
-                records.append(record)
+                records.append(record)  # replace the next day's record 
                 break
 
         return groups
     
-    def _filter_by_overlaps(self, bbox, groups):
+    def _filter_by_overlap(self, bbox, groups):
         """Enforce min_intersect criteria on groups of records.
 
-        After checking intersection with the scene bounding box, this
-        routine excludes redundant groups of records.
-
-        Returns: A dict of groups of records keyed by item_type
+        Returns: A dict of groups of records
         """
         filtered = {}
-        for item_type, rd in groups.items():
-            overlap = self._get_overlap(bbox, rd['records'])
+        for k,v in groups.items():
+            overlap = _get_overlap(bbox, _get_footprint(v['records']))
                           
             if overlap < self.specs['min_intersect']:
-                ids = [record['id'] for record in rd['records']]
-                print('Rejectd scene IDs {}: Overlap with bbox {:.1f}%'.format(
+                ids = [record['id'] for record in v['records']]
+                print('Rejected scene IDs {}: Overlap with bbox {:.1f}%'.format(
                     ids, 100 * overlap))
             else:
                 filtered.update({
-                    item_type: {
-                        'records': rd['records'],
+                    k: {
+                        'records': v['records'],
                         'overlap': overlap
                     }
                 })
 
         return filtered
 
-    def _strip_redundancy(self, groups):
+    def _filter_copies(self, groups):
         """Eliminate redundant groups of records.
 
-        PSOrthoTiles are constructed from PSScene3Band items, so we can
-        safely eliminate one or the other.
+        PSOrthoTiles are constructed from PSScene3Band items.  If satellite
+        ids and dates are the same, the underlying imagery is the same and 
+        one set or the other can be safely deleted. The preference is to keep
+        PSScene3Band because they are smaller and less expensive to process.
 
-        Returns: A dict of groups of records keyed by item_type
+        Returns: Dict of groups of records.
         """
-        try:
-            if (groups['PSScene3Band']['overlap'] >=
-                groups['PSOrthoTile']['overlap']):
-                groups.pop('PSOrthoTile')
-            else:
-                groups.pop('PSScene3Band')
-        except KeyError:
-            pass
+        filtered = groups.copy()
+        sat_ids = set([sat_id for (sat_id, item_type) in filtered.keys()])
+        for sat_id in sat_ids:
+            try:
+                if (filtered[(sat_id, 'PSScene3Band')]['overlap'] >= 
+                    filtered[(sat_id, 'PSOrthoTile')]['overlap']):
+                    filtered.pop((sat_id, 'PSOrthoTile'))
+                else:
+                    filtered.pop((sat_id, 'PSScene3Band'))
+            except KeyError:
+                pass
         
-        return groups
+        return filtered
 
-    def _get_overlap(self, bbox, records):
-        """Comptue overlap of bbox and scene records."""
-        footprint = self._get_footprint(records)
-        intersection = bbox.intersection(footprint)
-        intersect_frac = intersection.area/bbox.area
-        return intersect_frac
+    
+# geometric utilities
 
-    def _get_footprint(self, records):
-        """Find the union of geometries in records."""
-        footprints = [geometry.asShape(rec['geometry']) for rec in records]
-        return cascaded_union(footprints)
+def _sort_by_overlap(bbox, records):
+    """Sort records in group by inverse area overlap with bbox."""
+    recs_sorted = sorted(
+        records,
+        key= lambda rec: _get_overlap(bbox, geometry.asShape(rec['geometry'])))
+    return recs_sorted
+
+def _get_overlap(bbox, footprint):
+    """Comptue overlap of bbox and footprint.
+
+    Arguments bbox, footprint: Shapely polygons
+    
+    Returns: Decimal fractional area of intersection
+    """
+    intersection = bbox.intersection(footprint)
+    intersect_frac = intersection.area/bbox.area
+    return intersect_frac
+
+def _get_footprint(records):
+    """Find the union of geometries in records."""
+    footprints = [geometry.asShape(rec['geometry']) for rec in records]
+    return cascaded_union(footprints)
  
 
 # Planet-specific formatting functions
@@ -440,7 +462,8 @@ def _clean_record(record):
         'cloud_cover': 'clouds',
         'pixel_resolution': 'resolution',
         'gsd': 'gsd',
-        'epsg_code': 'epsg_code'
+        'epsg_code': 'epsg_code',
+        'satellite_id': 'satellite_id'
     }
     cleaned = {'catalogID': record['id']}
     cleaned.update({'thumbnail': record['_links']['thumbnail']})
@@ -466,12 +489,12 @@ def _get_scene_types(records):
 def _get_epsg_code(records):
     """Extract an EPSG code.
 
-    If multiple records are given, the code from the first record
+    If multiple records are given, the code from the last record
     is returned.  The expectation (not required) that records will be
-    ordered by overlap with the scene's boundingbox, so that the projection
-    is determined by the dominant component of the scene.
+    ordered inversely by overlap with the scene's boundingbox, so that the
+    projection is determined by the dominant component of the scene.
     """
-    return record[0]['properties']['epsg_code']
+    return records[-1]['properties']['epsg_code']
 
 def _get_bandmap(item_type, asset_type):
     """Find the band order for R-G-B bands."""
