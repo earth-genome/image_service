@@ -9,6 +9,11 @@ Usage with default specs (default except for N_images):
 > g = PlanetGrabber()
 > g(bbox, N_images=3, file_header='SanFrancisco')
 
+Because planet images are relatively small, multiple images often must be
+pulled and assembled to cover a bounding box. The minimal processing unit
+is therefore denoted a 'scene,' which includes all the images (or their
+records) required to produce one final image of the bounding box.  A call
+will attempt to produce N_images such scenes.  
 
 Catalog and image specs have defaults set in planet_default_specs.json, which,
 as of writing, takes form:
@@ -43,10 +48,12 @@ import json
 import os
 import sys
 
+import dateutil
 import matplotlib.pyplot as plt
 import numpy as np
 from planet import api
 from shapely import geometry
+from shapely.ops import cascaded_union
 import tifffile
 
 from postprocessing import color
@@ -63,14 +70,15 @@ WAITTIME = 15
 
 class PlanetGrabber(object):
     
-    """Class PlanetGrabber: Tool to grab a DG image respecting given specs.
+    """Class PlanetGrabber: Tool to grab Planet images respecting given specs.
 
     Attributes:
         specs: dict of catalog and image specs (see above for format and
            defaults)
 
     External methods:
-        __call__: Grab most recent available images consistent with specs.
+        __call__:  Scheduling wrapper for async execution of grab().
+        async grab: Grab most recent available images consistent with specs.
         grab_by_id:  Grab and write image for a known catalogID.
         search:  Given a boundingbox, search for relevant image records.
         search_clean: Search and return streamlined image records.
@@ -78,8 +86,9 @@ class PlanetGrabber(object):
         search_latlon_clean:  Search and return streamlined image records.
         search_id: Retrieve catalog record for input catalogID.
         async retrieve_asset: Activate an asset and add its reference to record.
-        download: Download an asset.
-        reprocess: Reprocess a downloaded image and clean record to return.
+        download: Download as asset.
+        geo_process: Reproject, crop to bbox, extract output bands, merge.
+        color_process: Correct color (producing mutliple versions of the image).
     """
 
     def __init__(self, **specs):
@@ -89,6 +98,13 @@ class PlanetGrabber(object):
         self._client = api.ClientV1()
 
     def __call__(self, bbox, file_header='', **grab_specs):
+        """Scheduling wrapper for async execution of grab()."""
+        loop = asyncio.get_event_loop()
+        recs_written = loop.run_until_complete(asyncio.ensure_future(
+            self.grab(bbox, file_header, **grab_specs)))
+        return recs_written
+        
+    async def grab(self, bbox, file_header='', **grab_specs):
         """Grab the most recent available images consistent with specs.
 
         Arguments:
@@ -105,27 +121,20 @@ class PlanetGrabber(object):
         specs.update(**grab_specs)
             
         records = self.search(bbox)[::-1]
-        records = [r for r in records if self._well_overlapped(bbox, r)]
+        scenes = self._group_into_scenes(bbox, records, **specs)
+        return scenes
 
-        retrieve_tasks = [
-            asyncio.ensure_future(self.retrieve_asset(record))
-                for record in records[-specs['N_images']:]
-        ]
+        retrieve_tasks = [asyncio.ensure_future(self._retrieve_for_scene(scene))
+                          for scene in scenes]
 
-        async def async_handler(tasks, bbox, file_header, **specs):
-            recs_written = []
-            for future in asyncio.as_completed(tasks):
-                asset, record = await future
-                print('Retrieved {}\nDownloading...'.format(record['id']),
-                      flush=True)
-                path = self.download(asset, file_header)
-                written = self.reprocess(bbox, record, path, **specs)
-                recs_written.append(written)
-            return recs_written
-
-        loop = asyncio.get_event_loop()
-        recs_written = loop.run_until_complete(
-            async_handler(retrieve_tasks, bbox, file_header, **specs))
+        recs_written = []
+        for future in asyncio.as_completed(retrieve_tasks):
+            scene_assets, scene_records = await future
+            print('Retrieved {}\nDownloading...'.format(
+                  [r['id'] for r in scene_records]), flush=True)
+            paths = self._download_for_scene(scene_assets, file_header)
+            written = self._reprocess(bbox, scene_records, paths, **specs)
+            recs_written.append(written)
         return recs_written
 
     def grab_by_id(self, bbox, catalogID, item_type, file_header='', **specs):
@@ -136,7 +145,7 @@ class PlanetGrabber(object):
             raise Exception('Catolog entry for id {} not returned.'.format(
                 catalogID))
         path = self.download(asset, file_header)
-        written = self.reprocess(bbox, record, path, **specs)
+        written = self.reprocess(bbox, [record], [path], **specs)
         return written
     
     def search(self, bbox, MAX_RECORDS=2500):
@@ -174,6 +183,14 @@ class PlanetGrabber(object):
         """
         records = self.search_latlon(lat, lon)
         return [_clean_record(r) for r in records[:N_records]]
+
+    async def _retrieve_for_scene(self, scene):
+        """Activate and collect assets for a scene."""
+        tasks = [asyncio.ensure_future(self.retrieve_asset(record))
+                     for record in scene]
+        done, _ = await asyncio.wait(tasks)
+        assets, records = zip(*[future.result() for future in done])
+        return assets, records
     
     async def retrieve_asset(self, record):
         """Activate an asset and add its reference to record."""
@@ -205,31 +222,73 @@ class PlanetGrabber(object):
         """Check asset activation status."""
         return True if asset['status'] == 'active' else False
 
+    def _download_for_scene(self, assets, file_header):
+        """Download mulitple assets."""
+        paths = []
+        for asset in assets:
+            paths.append(self.download(asset, file_header))
+        return paths
+            
     def download(self, asset, file_header):
-        """Download asset and write to filename."""
+        """Download an asset."""
         body = self._client.download(asset).get_body()
         path = file_header + body.name
         body.write(file=path)
         return path
 
-    def reprocess(self, bbox, record, path, write_styles=[], **specs):
-        """Reprocess a downloaded image and clean record to return.
+    def _reprocess(self, bbox, records, paths, **specs):
+        """Run combined geo- and color- postprocessing routines.
 
-        Depending on asset type, this function:
-            crops image to bbox,
-            reforms band structure,
-            color corrects (perhaps producing mutliple versions of the image),
-            cleans and adds image paths to the record.
-
-        Returns: Updated record
+        Returns: Cleaned, combined record, including paths to final images.
         """
-        paths = []
-        styles = [style.lower() for style in write_styles]
+        item_type, asset_type = _get_scene_types(records)
+        source_epsg_codes = [_get_epsg_code([record]) for record in records]
+        target_epsg_code = _get_epsg_code(records)
+        output_bands = _get_bandmap(item_type, asset_type)
         
-        path = gdal_routines.crop(path, bbox)
-        path = gdal_routines.reband(path, _get_bandmap(record))
-        paths.append(path)
-        print('\nStaging at {}\n'.format(path), flush=True)
+        scene_record = _merge_records(
+            [_clean_record(record) for record in records])
+        scene_path = self.geo_process(
+            bbox, paths, source_epsg_codes, target_epsg_code, output_bands)
+        output_paths = self.color_process(scene_path, asset_type, **specs)
+        scene_record.update({'paths': output_paths})
+        return scene_record
+
+    def geo_process(self, bbox, paths, source_epsg_codes, target_epsg_code,
+                    output_bands):
+        """Reproject, crop to bbox, extract output bands, merge.
+
+        Arguments:
+            bbox: shapely box
+            paths: list of paths to component images of a scene
+            records: image records
+            source_epsg_code: list of integer EPSG codes
+            target_epsg_code: integer EPSG code
+                (typically here codes are WGS 84 / UTM zone codes, e.g., 32617)
+            output_bands: a list of bands by number (indexed from 1)
+            
+        Returns:  Path to output image.
+        """
+        reshaped = []
+        for path, source_code in zip(paths, source_epsg_codes):
+            if source_code != target_epsg_code:
+                path = gdal_routines.reproject(path, target_epsg_code)
+            path = gdal_routines.crop_and_reband(path, bbox, output_bands)
+            reshaped.append(path)
+         
+        if len(reshaped) > 1:
+            scene_path = gdal_routines.merge(reshaped)
+        else:
+            scene_path = reshaped[0]
+        return scene_path
+        
+    def color_process(self, path, asset_type, write_styles=[], **specs):
+        """Correct color (producing mutliple versions of the image).
+
+        Returns:  Updated record with paths to color-corrected images.
+        """
+        output_paths = []
+        styles = [style.lower() for style in write_styles]
 
         def correct_and_write(img, path, style):
             """Correct color and write to file."""
@@ -240,33 +299,121 @@ class PlanetGrabber(object):
             return outpath
             
         img = tifffile.imread(path)
-        if (record['properties']['asset_type'] == 'visual' or
-            record['properties']['asset_type'] == 'ortho_visual'):
+        if (asset_type == 'visual' or asset_type == 'ortho_visual'):
 
             # add this minimal tweak, since Planet visual is already corrected:
-            paths.append(correct_and_write(img, path, 'expanded'))
+            output_paths.append(correct_and_write(img, path, 'expanded'))
 
         for style in styles:
             if style in color.STYLES.keys():
-                paths.append(correct_and_write(img, path, style))
+                output_paths.append(correct_and_write(img, path, style))
 
-        cleaned = _clean_record(record)
-        cleaned.update({'paths': paths})
-        return cleaned
+        return output_paths
 
-    # Functions to enforce certain specs.
+    # Functions for grouping records returned by search into
+    # collections that can be stitched to cover the requested scene:
+    
+    def _group_into_scenes(self, bbox, records, **specs):
+        """Find groups of overlapping, same-day images. 
 
-    def _well_overlapped(self, bbox, record):
-        """Check whether bbox and record overlap at level min_intersect."""
-        footprint = geometry.asShape(record['geometry'])
+        Returns:  List of lists of records
+        """
+        scenes = []
+        records = json.loads(json.dumps(records))
+        while len(scenes) < specs['N_images']:
+            groups = self._pop_day(records)
+            groups = self._filter_by_overlaps(bbox, groups)
+            groups = self._strip_redundancy(groups)
+            group_records = [v['records'] for v in groups.values()]
+            while group_records and len(scenes) < specs['N_images']:
+                scenes.append(group_records.pop())
+        return scenes
+
+    def _pop_day(self, records):
+        """Pop a day's worth of records and sort by item type.
+
+        Argument records:  Image records sorted by date.
+
+        Return: A dict of groups of records keyed by item_type
+        """
+        record = records.pop()
+        item_type = record['properties']['item_type']
+        date0 = dateutil.parser.parse(record['properties']['acquired']).date()
+
+        groups = {item_type: {'records': [record]}}
+        while True:
+            record = records.pop()
+            date = dateutil.parser.parse(
+                record['properties']['acquired']).date()
+            if date == date0:
+                item_type = record['properties']['item_type']
+                try: 
+                    groups[item_type]['records'].append(record)
+                except KeyError:
+                    groups.update({item_type: {'records': [record]}})
+            else:
+                records.append(record)
+                break
+
+        return groups
+    
+    def _filter_by_overlaps(self, bbox, groups):
+        """Enforce min_intersect criteria on groups of records.
+
+        After checking intersection with the scene bounding box, this
+        routine excludes redundant groups of records.
+
+        Returns: A dict of groups of records keyed by item_type
+        """
+        filtered = {}
+        for item_type, rd in groups.items():
+            overlap = self._get_overlap(bbox, rd['records'])
+                          
+            if overlap < self.specs['min_intersect']:
+                ids = [record['id'] for record in rd['records']]
+                print('Rejectd scene IDs {}: Overlap with bbox {:.1f}%'.format(
+                    ids, 100 * overlap))
+            else:
+                filtered.update({
+                    item_type: {
+                        'records': rd['records'],
+                        'overlap': overlap
+                    }
+                })
+
+        return filtered
+
+    def _strip_redundancy(self, groups):
+        """Eliminate redundant groups of records.
+
+        PSOrthoTiles are constructed from PSScene3Band items, so we can
+        safely eliminate one or the other.
+
+        Returns: A dict of groups of records keyed by item_type
+        """
+        try:
+            if (groups['PSScene3Band']['overlap'] >=
+                groups['PSOrthoTile']['overlap']):
+                groups.pop('PSOrthoTile')
+            else:
+                groups.pop('PSScene3Band')
+        except KeyError:
+            pass
+        
+        return groups
+
+    def _get_overlap(self, bbox, records):
+        """Comptue overlap of bbox and scene records."""
+        footprint = self._get_footprint(records)
         intersection = bbox.intersection(footprint)
         intersect_frac = intersection.area/bbox.area
-        wo = True if intersect_frac > self.specs['min_intersect'] else False
-        if not wo:
-            print('Rejectd ID {}: Overlap with bbox {:.1f}%'.format(
-                record['id'], 100 * intersect_frac))
-        return wo
+        return intersect_frac
 
+    def _get_footprint(self, records):
+        """Find the union of geometries in records."""
+        footprints = [geometry.asShape(rec['geometry']) for rec in records]
+        return cascaded_union(footprints)
+ 
 
 # Planet-specific formatting functions
 
@@ -279,6 +426,10 @@ def _build_search_filters(**specs):
         sf.append(api.filters.date_range('acquired', lt=specs['endDate']))
     return sf
 
+def _merge_records(records):
+    """Combine records for all images in a scene."""
+    return {'component_images': [record for record in records]}
+
 def _clean_record(record):
     """Streamline image record."""
     keymap = {  # maps record keys to our standardized nomenclature
@@ -288,7 +439,8 @@ def _clean_record(record):
         'acquired': 'timestamp',
         'cloud_cover': 'clouds',
         'pixel_resolution': 'resolution',
-        'gsd': 'gsd'
+        'gsd': 'gsd',
+        'epsg_code': 'epsg_code'
     }
     cleaned = {'catalogID': record['id']}
     cleaned.update({'thumbnail': record['_links']['thumbnail']})
@@ -296,10 +448,33 @@ def _clean_record(record):
     cleaned.update({keymap[k]:v for k,v in record['properties'].items()
         if k in keymap.keys()})
     cleaned['clouds'] *= 100
-    return cleaned   
-    
-def _get_bandmap(record):
-    """Find the band order for R-G-B bands for the input record."""
+    return cleaned
+
+def _get_scene_types(records):
+    """Extract (common) item and asset types from records."""
+    item_type = records[0]['properties']['item_type']
+    asset_type = records[0]['properties']['asset_type']
+    for record in records[1:]:
+        it = record['properties']['item_type']
+        at = record['properties']['asset_type']
+        if (it != item_type or at != asset_type):
+            raise ValueError('Preparing to merge different item or ' +
+                'asset types {}/{}: {}/{}'.format(
+                it, item_type, at, asset_type))
+    return item_type, asset_type
+
+def _get_epsg_code(records):
+    """Extract an EPSG code.
+
+    If multiple records are given, the code from the first record
+    is returned.  The expectation (not required) that records will be
+    ordered by overlap with the scene's boundingbox, so that the projection
+    is determined by the dominant component of the scene.
+    """
+    return record[0]['properties']['epsg_code']
+
+def _get_bandmap(item_type, asset_type):
+    """Find the band order for R-G-B bands."""
     bandmaps = {   
         'PSScene3Band': {
             'visual': (1, 2, 3),
@@ -317,8 +492,6 @@ def _get_bandmap(record):
             'ortho_visual': (3, 2, 1)
         }
     }
-    item_type = record['properties']['item_type']
-    asset_type = record['properties']['asset_type']
     try:
         bands = bandmaps[item_type][asset_type]
     except KeyError as e:
