@@ -32,13 +32,12 @@ def reproject(filename, epsg_code, clean=True):
     else:
         return targetname
 
-def crop_and_reband(filename, bbox, output_bands, clean=True):
-    """Crop GeoTiff to boundingbox and set output_bands.
+def crop(filename, bbox, clean=True):
+    """Crop GeoTiff to bounding box.
 
     Arguments:
         filename: GeoTiff filename
         bbox: A shapely box.
-        output_bands: A list of bands by number (indexed from 1)
         clean: True/False to delete the input file. 
 
     Output: Writes a GeoTiff.
@@ -48,12 +47,10 @@ def crop_and_reband(filename, bbox, output_bands, clean=True):
     tags = ('_bbox{:.4f}_{:.4f}_{:.4f}_{:.4f}'.format(*bbox.bounds))
     targetname = filename.split('.tif')[0] + tags + '.tif'
     bounds = geobox.shapely_to_gdal_box(bbox)
-    dressed_bands = np.asarray([('-b', str(b)) for b in output_bands])
     commands = [
         'gdal_translate',
         '-projwin_srs', 'EPSG:4326',
         '-projwin', *[str(b) for b in bounds],
-        *dressed_bands.flatten(),
         '-co', 'COMPRESS=LZW',
         filename, targetname
     ]
@@ -61,7 +58,6 @@ def crop_and_reband(filename, bbox, output_bands, clean=True):
     if clean:
         os.remove(filename)
     return targetname
-
 
 def merge(filenames, clean=True):
     """Merge input GeoTiffs.
@@ -95,3 +91,34 @@ def merge(filenames, clean=True):
         for filename in filenames:
             os.remove(filename)
     return targetname
+
+# If an alpha band is kept through crop and merge, gdal_merge will use it to
+# correctly handle no-data values in merging partial scenes.
+# Thus, reband() should be reserved for a final step in processing:
+
+def reband(filename, output_bands, clean=True):
+    """Return GeoTiff with output_bands.
+
+    Arguments:
+        filename: GeoTiff filename
+        output_bands: A list of bands by number (indexed from 1)
+        clean: True/False to delete the input file. 
+
+    Output: Writes a GeoTiff.
+
+    Returns: New GeoTiff filename.
+    """
+    targetname = filename.split('.tif')[0] + '-RGB.tif'
+    dressed_bands = np.asarray([('-b', str(b)) for b in output_bands])
+    commands = [
+        'gdal_translate',
+        *dressed_bands.flatten(),
+        '-co', 'COMPRESS=LZW',
+        filename, targetname
+    ]
+    subprocess.call(commands)
+    if clean:
+        os.rename(targetname, filename)
+        return filename
+    else:
+        return targetname
