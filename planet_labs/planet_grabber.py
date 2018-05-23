@@ -79,7 +79,7 @@ class PlanetGrabber(object):
     External methods:
         __call__:  Scheduling wrapper for async execution of grab().
         async grab: Grab most recent available images consistent with specs.
-        grab_by_id:  Grab and write image for a known catalogID.
+        async grab_by_id:  Grab and write image for a known catalogID.
         search:  Given a boundingbox, search for relevant image records.
         search_clean: Search and return streamlined image records.
         search_latlon:  Given lat, lon, search for relevant image records.
@@ -144,7 +144,7 @@ class PlanetGrabber(object):
         written = self._reprocess(bbox, scene_records, paths, **specs)
         return written
 
-    def grab_by_id(self, bbox, catalogID, item_type, file_header='',
+    async def grab_by_id(self, bbox, catalogID, item_type, file_header='',
                    **grab_specs):
         """Grab and write image for a known catalogID."""
         specs = self.specs.copy()
@@ -152,8 +152,7 @@ class PlanetGrabber(object):
         
         record = self.search_id(catalogID, item_type)
         loop = asyncio.get_event_loop()
-        asset, record = loop.run_until_complete(
-            asyncio.ensure_future(self.retrieve_asset(record)))
+        asset, record = await self.retrieve_asset(record)
         
         if not asset:
             raise Exception('Catolog entry for id {} not returned.'.format(
