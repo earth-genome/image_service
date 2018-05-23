@@ -199,7 +199,7 @@ class AutoGrabber(object):
             written.update({'urls': urls})
             recs_written.append(written)
 
-        print('Pulled {} scene(s).\n'.format(len(recs_written)))
+        print('Pulled {} scene(s).\n'.format(len(recs_written)), flush=True)
         return recs_written
 
     async def pull_by_id(self, provider, bbox, catalogID, item_type=None,
@@ -259,7 +259,7 @@ class AutoGrabber(object):
             except Exception as e:
                 print('Bucket error for {}: {}\n'.format(path, repr(e)))
             os.remove(path)
-        print('Uploaded images:\n{}\n'.format(urls))
+        print('Uploaded images:\n{}\n'.format(urls), flush=True)
         return urls
 
     def _enforce_size_specs(self, bbox):
@@ -355,7 +355,8 @@ class BulkGrabber(AutoGrabber):
                       db=STORY_SEEDS,
                       category=DB_CATEGORY,
                       wireStartDate=WIRE_START_DATE,
-                      wireEndDate=WIRE_END_DATE):
+                      wireEndDate=WIRE_END_DATE
+                      bbox_rescaling=2):
         """Pull images for stories in database between given dates.
 
         Arguments:
@@ -387,7 +388,8 @@ class BulkGrabber(AutoGrabber):
             except KeyError:
                 continue
             try: 
-                image_records = self.pull_for_story(s)
+                image_records = self.pull_for_story(
+                    s, bbox_rescaling=bbox_rescaling)
             except Exception as e:
                 self.logger.exception('Pulling for story {}\n'.format(s.idx))
         print('complete')
