@@ -202,14 +202,14 @@ class AutoGrabber(object):
         print('Pulled {} scene(s).\n'.format(len(recs_written)))
         return recs_written
 
-    def pull_by_id(self, provider, bbox, catalogID, item_type=None,
+    async def pull_by_id(self, provider, bbox, catalogID, item_type=None,
                    **image_specs):
         """Pull image for a given catalogID and post to bucket."""
         specs = self.image_specs.copy()
         specs.update(image_specs)
         
         grabber = self.provider_classes[provider](**specs)
-        record = grabber.grab_by_id(
+        record = await grabber.grab_by_id(
             bbox, catalogID, item_type, 
             file_header=os.path.join(self.staging_dir, ''),
             **specs)
