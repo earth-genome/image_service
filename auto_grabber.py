@@ -158,7 +158,7 @@ class AutoGrabber(object):
 
         Arguments:
             bbox: a shapely box
-            image_specs: to override values in self.image_specs
+            grab_specs: to override values in self.image_specs
 
         Output:  Images written posted to cloud storage bucket.
 
@@ -168,38 +168,32 @@ class AutoGrabber(object):
         specs.update(image_specs)
         bbox = self._enforce_size_specs(bbox)
 
-        output_records = []
+        grab_tasks = []
         print('Pulling for bbox {}.\n'.format(bbox.bounds))
+        
         for grabber_class in self.provider_classes.values():
             grabber = grabber_class(**specs)
-            records = grabber.search(bbox)[::-1]
-            records = [r for r in records if grabber._well_overlapped(bbox, r)]
+            scenes = grabber._prep_scenes(bbox, **specs)
 
-            retrieve_tasks = [
-                asyncio.ensure_future(grabber.retrieve_asset(record))
-                    for record in records[-specs['N_images']:]
+            grab_tasks += [
+                asyncio.ensure_future(
+                    grabber._grab_scene(
+                        bbox, scene, os.path.join(self.staging_dir, ''),
+                        **specs))
+                for scene in scenes
             ]
 
-            async def async_handler(tasks, bbox, file_header, **specs):
-                recs_written = []
-                for future in asyncio.as_completed(tasks):
-                    asset, record = await future
-                    print('Retrieved {}\nDownloading...'.format(
-                        record['properties']), flush=True)
-                    path = grabber.download(asset, file_header)
-                    written = grabber.reprocess(bbox, record, path, **specs)
-                    urls = self._upload(written.pop('paths'))
-                    written.update({'urls': urls})
-                    recs_written.append(written)
-                return recs_written
+        async def async_handler(tasks):
+            recs_written = []
+            for future in asyncio.as_completed(tasks):
+                written = await future
+                urls = self._upload(written.pop('paths'))
+                written.update({'urls': urls})
+                recs_written.append(written)
+            return recs_written
 
-            loop = asyncio.get_event_loop()
-            recs_written = loop.run_until_complete(
-                async_handler(
-                    retrieve_tasks, bbox,
-                    os.path.join(self.staging_dir, ''), **specs))
-
-            output_records += recs_written
+        loop = asyncio.get_event_loop()
+        output_records = loop.run_until_complete(async_handler(grab_tasks))
             
         print('Pulled {} scene(s).\n'.format(len(output_records)))
         return output_records
