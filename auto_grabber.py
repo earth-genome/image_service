@@ -1,5 +1,14 @@
 """Classes for automated pulling of imagery. 
 
+--- --- 
+WIP:  Currently the usage examples below are disabled; only the interface
+through the image_service Quart web app (which supplies it's own event loop
+manager) is functioning.  Any of these functions can be restored by adding
+a wrapper:
+loop = asyncio.get_event_loop()
+output = loop.run_until_complete(<function to run>)
+--- ---
+
 Usage:
 
 To pull for a GeoJSON FeatureCollection:
@@ -112,7 +121,7 @@ class AutoGrabber(object):
     """Class to pull images.
 
     Public Methods:
-        pull: pull images for boundingbox
+        async pull: pull images for boundingbox
         pull_for_story: pull images for all bboxes in a DBItem story
 
     Attributes:
@@ -153,7 +162,7 @@ class AutoGrabber(object):
                 self.image_specs.update(json.load(f))
         self.image_specs.update(image_specs)
 
-    def pull(self, bbox, **image_specs):
+    async def pull(self, bbox, **image_specs):
         """Pull images for bbox and post to bucket.
 
         Arguments:
@@ -183,20 +192,15 @@ class AutoGrabber(object):
                 for scene in scenes
             ]
 
-        async def async_handler(tasks):
-            recs_written = []
-            for future in asyncio.as_completed(tasks):
-                written = await future
-                urls = self._upload(written.pop('paths'))
-                written.update({'urls': urls})
-                recs_written.append(written)
-            return recs_written
+        recs_written = []
+        for future in asyncio.as_completed(tasks):
+            written = await future
+            urls = self._upload(written.pop('paths'))
+            written.update({'urls': urls})
+            recs_written.append(written)
 
-        loop = asyncio.get_event_loop()
-        output_records = loop.run_until_complete(async_handler(grab_tasks))
-            
-        print('Pulled {} scene(s).\n'.format(len(output_records)))
-        return output_records
+        print('Pulled {} scene(s).\n'.format(len(recs_written)))
+        return recs_written
 
     def pull_by_id(self, provider, bbox, catalogID, item_type=None,
                    **image_specs):
