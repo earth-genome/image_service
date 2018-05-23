@@ -355,7 +355,7 @@ class BulkGrabber(AutoGrabber):
                       db=STORY_SEEDS,
                       category=DB_CATEGORY,
                       wireStartDate=WIRE_START_DATE,
-                      wireEndDate=WIRE_END_DATE
+                      wireEndDate=WIRE_END_DATE,
                       bbox_rescaling=2):
         """Pull images for stories in database between given dates.
 
