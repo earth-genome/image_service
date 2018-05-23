@@ -151,7 +151,6 @@ class PlanetGrabber(object):
         specs.update(**grab_specs)
         
         record = self.search_id(catalogID, item_type)
-        loop = asyncio.get_event_loop()
         asset, record = await self.retrieve_asset(record)
         
         if not asset:
@@ -493,7 +492,7 @@ def _get_scene_types(records):
         it = record['properties']['item_type']
         at = record['properties']['asset_type']
         if (it != item_type or at != asset_type):
-            raise ValueError('Preparing to merge different item or ' +
+            raise ValueError('Cannot merge different item or ' +
                 'asset types {}/{}: {}/{}'.format(
                 it, item_type, at, asset_type))
     return item_type, asset_type
