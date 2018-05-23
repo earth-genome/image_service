@@ -193,7 +193,7 @@ class AutoGrabber(object):
             ]
 
         recs_written = []
-        for future in asyncio.as_completed(tasks):
+        for future in asyncio.as_completed(grab_tasks):
             written = await future
             urls = self._upload(written.pop('paths'))
             written.update({'urls': urls})
