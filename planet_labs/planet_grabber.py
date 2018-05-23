@@ -101,12 +101,11 @@ class PlanetGrabber(object):
         """Scheduling wrapper for async execution of grab()."""
         loop = asyncio.get_event_loop()
         recs_written = loop.run_until_complete(asyncio.ensure_future(
-            self.grab(bbox, file_header, **grab_specs)))
+            self.grab(bbox, file_header=file_header, **grab_specs)))
         return recs_written
-        
-    async def grab(self, bbox, file_header='', **grab_specs):
-        """Grab the most recent available images consistent with specs.
 
+    async def grab(self, bbox, file_header, **grab_specs):
+        """Grab the most recent available images consistent with specs.
         Arguments:
             bbox: a shapely box
             file_header: optional prefix for output image files
@@ -119,33 +118,49 @@ class PlanetGrabber(object):
         """
         specs = self.specs.copy()
         specs.update(**grab_specs)
-            
+        
+        scenes = self._prep_scenes(bbox, **specs)
+        grab_tasks = [
+            asyncio.ensure_future(
+                self._grab_scene(bbox, scene, file_header, **specs))
+            for scene in scenes
+        ]
+
+        done, _ = await asyncio.wait(grab_tasks)
+        return [future.result() for future in done]
+
+    def _prep_scenes(self, bbox, **specs):
+        """Search and group search records into scenes."""
         records = self.search(bbox)[::-1]
         scenes = self._group_into_scenes(bbox, records, **specs)
-        #return scenes
+        return scenes
 
-        retrieve_tasks = [asyncio.ensure_future(self._retrieve_for_scene(scene))
-                          for scene in scenes]
+    async def _grab_scene(self, bbox, scene, file_header, **specs):
+        """Retrieve, download, and reprocess scene assets."""
+        scene_assets, scene_records = await self._retrieve_for_scene(scene)
+        print('Retrieved {}\nDownloading...'.format(
+              [r['id'] for r in scene_records]), flush=True)
+        paths = self._download_for_scene(scene_assets, file_header)
+        written = self._reprocess(bbox, scene_records, paths, **specs)
+        return written
 
-        recs_written = []
-        for future in asyncio.as_completed(retrieve_tasks):
-            scene_assets, scene_records = await future
-            print('Retrieved {}\nDownloading...'.format(
-                  [r['id'] for r in scene_records]), flush=True)
-            paths = self._download_for_scene(scene_assets, file_header)
-            written = self._reprocess(bbox, scene_records, paths, **specs)
-            recs_written.append(written)
-        return recs_written
-
-    def grab_by_id(self, bbox, catalogID, item_type, file_header='', **specs):
+    def grab_by_id(self, bbox, catalogID, item_type, file_header='',
+                   **grab_specs):
         """Grab and write image for a known catalogID."""
+        specs = self.specs.copy()
+        specs.update(**grab_specs)
+        
         record = self.search_id(catalogID, item_type)
-        asset, record = self.retrieve_asset(record)
+        loop = asyncio.get_event_loop()
+        asset, record = loop.run_until_complete(
+            asyncio.ensure_future(self.retrieve_asset(record)))
+        
         if not asset:
             raise Exception('Catolog entry for id {} not returned.'.format(
                 catalogID))
         path = self.download(asset, file_header)
-        written = self.reprocess(bbox, [record], [path], **specs)
+        written = self._reprocess(bbox, [record], [path], **specs)
+        
         return written
     
     def search(self, bbox, MAX_RECORDS=2500):
@@ -185,15 +200,13 @@ class PlanetGrabber(object):
         return [_clean_record(r) for r in records[:N_records]]
 
     async def _retrieve_for_scene(self, scene):
-        """Activate and collect assets for a scene."""
-        tasks = [asyncio.ensure_future(self.retrieve_asset(record))
-                     for record in scene]
+        tasks = [self.retrieve_asset(record) for record in scene]
         done, _ = await asyncio.wait(tasks)
         assets, records = zip(*[future.result() for future in done])
         return assets, records
     
     async def retrieve_asset(self, record):
-        """Activate an asset and add its reference to record."""
+        """Activate an asset and add its reference to the record."""
         assets = self._client.get_assets_by_id(
             record['properties']['item_type'], record['id']).get()
         asset, asset_type = self._activate(assets)
