@@ -6,8 +6,9 @@ import datetime
 
 import numpy as np
 import matplotlib.pyplot as plt
-
 from quart import Quart, request
+from rq import Queue
+from worker import conn
 
 sys.path.append('grab_imagery/story-seeds/')
 from grab_imagery import auto_grabber
@@ -28,6 +29,7 @@ EXAMPLE_ARGS = ('provider=digital_globe' +
 
 
 app = Quart(__name__)
+q = Queue(connection=conn)
 
 @app.route('/')
 def help():
@@ -65,9 +67,15 @@ async def search():
         return '{}<br>{}<br>'.format(repr(e), msg)
 
     grabber = PROVIDER_CLASSES[provider](**specs)
-    records = grabber.search_latlon_clean(
-        lat, lon, N_records=specs['N_images'])
-    return json.dumps(records)
+
+    job = q.enqueue(grabber.search_latlon_clean, lat, lon,
+                    N_records=specs['N_images'])
+    import time
+    time.sleep(10)
+    return json.dumps(job.result)
+    #records = grabber.search_latlon_clean(
+    #    lat, lon, N_records=specs['N_images'])
+    #return json.dumps(records)
 
 @app.route('/search-id')
 def search_id():

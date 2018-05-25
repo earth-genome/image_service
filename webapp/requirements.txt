@@ -13,3 +13,5 @@ google-cloud-storage
 planet
 scikit-image
 uvloop
+redis
+rq
