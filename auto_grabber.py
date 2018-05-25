@@ -201,13 +201,12 @@ class AutoGrabber(object):
         
         for grabber_class in self.provider_classes.values():
             grabber = grabber_class(**specs)
-            scenes = grabber._prep_scenes(bbox, **specs)
+            scenes = grabber.prep_scenes(bbox)
 
             grab_tasks += [
                 asyncio.ensure_future(
-                    grabber._grab_scene(
-                        bbox, scene, os.path.join(self.staging_dir, ''),
-                        **specs))
+                    grabber.grab_scene(
+                        bbox, scene, os.path.join(self.staging_dir, '')))
                 for scene in scenes
             ]
 

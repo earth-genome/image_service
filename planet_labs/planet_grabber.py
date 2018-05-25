@@ -34,10 +34,10 @@ as of writing, takes form:
 	    "visual"
     ],
     "write_styles": [
-    "matte",
-	"contrast",
-	"dra",
-	"desert"
+        "matte",
+	    "contrast",
+	    "dra",
+	    "desert"
     ]
 }
 
@@ -80,6 +80,8 @@ class PlanetGrabber(object):
         __call__:  Scheduling wrapper for async execution of grab().
         async grab: Grab most recent available images consistent with specs.
         async grab_by_id:  Grab and write image for a known catalogID.
+        prep_scenes: Search and group search records into scenes.
+        grab_scene: Retrieve, download, and reprocess scene assets.
         search:  Given a boundingbox, search for relevant image records.
         search_clean: Search and return streamlined image records.
         search_latlon:  Given lat, lon, search for relevant image records.
@@ -116,13 +118,10 @@ class PlanetGrabber(object):
             
         Returns: List of records of written images
         """
-        specs = self.specs.copy()
-        specs.update(**grab_specs)
-        
-        scenes = self._prep_scenes(bbox, **specs)
+        scenes = self.prep_scenes(bbox, **grab_specs)
         grab_tasks = [
             asyncio.ensure_future(
-                self._grab_scene(bbox, scene, file_header, **specs))
+                self.grab_scene(bbox, scene, file_header, **grab_specs))
             for scene in scenes
         ]
 
@@ -135,14 +134,18 @@ class PlanetGrabber(object):
                 print('During _grab_scene(): {}'.format(repr(e)))
         return recs_written
 
-    def _prep_scenes(self, bbox, **specs):
+    def prep_scenes(self, bbox, **grab_specs):
         """Search and group search records into scenes."""
+        specs = self.specs.copy()
+        specs.update(**grab_specs)
         records = self.search(bbox)[::-1]
         scenes = self._group_into_scenes(bbox, records, **specs)
         return scenes
 
-    async def _grab_scene(self, bbox, scene, file_header, **specs):
+    async def grab_scene(self, bbox, scene, file_header, **grab_specs):
         """Retrieve, download, and reprocess scene assets."""
+        specs = self.specs.copy()
+        specs.update(**grab_specs)
         active_assets = await self._retrieve_for_scene(scene)
         print('Retrieved {}\nDownloading...'.format(
               [r['id'] for r in scene]), flush=True)
