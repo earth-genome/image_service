@@ -4,7 +4,7 @@ External functions:
     get_side_distances
     make_bbox
     bbox_from_scale
-    square_bbox_from_scale
+    square4326_bbox_from_scale
     osm_to_shapely_box
 
 """
@@ -45,10 +45,10 @@ def bbox_from_scale(lat, lon, scale):
                      conversions.longitude_from_dist(scale, lat))
     return bbox
 
-def square_bbox_from_scale(lat, lon, scale):
+def square4326_bbox_from_scale(lat, lon, scale):
     """Make a bounding box given lat/lon and scale in km.
 
-    This routine reverses the expansion in latitude due to EPSG:4326
+    This routine reverses the expansion in longitude due to EPSG:4326
     projection by decreasing the increment in longitude by cos(lat).
     (E.g. Digital Globe uses EPSG:4326 by default.)
     """
