@@ -54,8 +54,12 @@ _allow_highres() is called to determine whether pansharpen should
 be True or False according to whether image is smaller or larger than
 pansharp_scale.
 
+A number of idiosyncrasies of the code, including use of asyncio, are
+applied to mirror the syntax of planet_grabber.
+
 """
 
+import asyncio
 import datetime
 import json
 import os
@@ -71,8 +75,6 @@ import gbdxtools  # bug in geo libraries.  import this *after* shapely
 from geobox import geobox
 from postprocessing import color
 
-catalog = gbdxtools.catalog.Catalog()
-
 # Default catalog and image parameters:
 DEFAULT_SPECS_FILE = os.path.join(os.path.dirname(__file__),
                                   'dg_default_specs.json')
@@ -86,11 +88,13 @@ class DGImageGrabber(object):
     Attributes:
         specs: dict of catalog and image specs (see above for format and
            defaults)
-        search_filters: DG-formatted specs for catalog search
 
     External methods:
-        __call__: Grab most recent available images consistent with specs.
-        grab_id:  Grab and write image for a known catalogID.
+        __call__:  Scheduling wrapper for async execution of grab().
+        async grab: Grab most recent available images consistent with specs.
+        async grab_by_id:  Grab and write image for a known catalogID.
+        prep_scenes: Search and collect dask images and their records.
+        async grab_scene: Download and reprocess scene assets.
         search:  Given a boundingbox, search for relevant image records.
         search_clean: Search and return streamlined image records.
         search_latlon:  Given lat, lon, search for relevant image records.
@@ -103,9 +107,18 @@ class DGImageGrabber(object):
     def __init__(self, **specs):
         self.specs = DEFAULT_SPECS.copy()
         self.specs.update(specs)
-        self.search_filters = _build_search_filters(**self.specs)
+        self._search_filters = _build_search_filters(**self.specs)
+        self._catalog = gbdxtools.catalog.Catalog()
 
     def __call__(self, bbox, file_header='', **grab_specs):
+        """Scheduling wrapper for async execution of grab()."""
+        loop = asyncio.get_event_loop()
+        recs_written = loop.run_until_complete(asyncio.ensure_future(
+            self.grab(bbox, file_header=file_header, **grab_specs)))
+        return recs_written
+
+
+    async def grab(self, bbox, file_header='', **grab_specs):
         """Grab the most recent available images consistent with specs.
 
         Arguments:
@@ -114,50 +127,55 @@ class DGImageGrabber(object):
             grab_specs: to override certain elements of self.specs, possibly:
                 N_images: number of images to retrieve
                 write_styles: list of possible output image styles, from:
-                    'DGDRA' (DG Dynamical Range Adjusted RGB PNG)
-                    color-corrected styles defined in postprocessing.color
-                    (if empty, a raw GeoTiff is written)
+                    'DGDRA' (DG Dynamical Range Adjusted RGB PNG), 
+                    styles defined in color.STYLES
             
-
         Returns: List of records of written images
         """
-        specs = self.specs.copy()
-        specs.update(**grab_specs)
-        if specs['pansharpen'] is None:
-            specs['pansharpen'] = self._check_highres(bbox)
-            
-        records = self.search(bbox)[::-1]
-
-        daskimgs, recs_retrieved = self.retrieve(bbox, records, **specs)
+        scenes = self.prep_scenes(bbox, **grab_specs)
 
         recs_written = []
-        for daskimg, rec in zip(daskimgs, recs_retrieved):
-            prefix = _build_filename(bbox, rec, file_header)
-            paths = self.write_img(daskimg, prefix, **specs)
-            cleaned = _clean_record(rec)
-            cleaned.update({'paths': paths})
-            recs_written.append(cleaned)
-
+        for scene in scenes:
+            written = await self.grab_scene(bbox, scene, file_header,
+                                            **grab_specs)
+            recs_written.append(written)
+            
         return recs_written
 
-    def grab_by_id(self, catalogID, bbox, file_header='', **specs):
+    def prep_scenes(self, bbox, **grab_specs):
+        """Search and collect available dask images and their records."""
+        specs = self.specs.copy()
+        specs.update(**grab_specs)
+        records = self.search(bbox)[::-1]
+        daskimgs, recs_retrieved = self.retrieve(bbox, records, **specs)
+        return zip(daskimgs, recs_retrieved)
+
+    async def grab_scene(self, bbox, scene, file_header, **grab_specs):
+        """Download and reprocess scene assets."""
+        specs = self.specs.copy()
+        specs.update(**grab_specs)
+        written = self.download(bbox, *scene, file_header, **specs)
+        return written
+    
+    def grab_by_id(self, bbox, catalogID, *args, file_header='', **grab_specs):
         """Grab and write image for a known catalogID."""
+        specs = self.specs.copy()
+        specs.update(**grab_specs)
+        
         record = self.search_id(catalogID)
         daskimgs, _ = self.retrieve(bbox, [record], **specs)
         if not daskimgs:
             raise Exception('Catolog entry for id {} not returned.'.format(
-                catalogID)) 
-        prefix = _build_filename(bbox, record, file_header)
-        paths = self.write_img(daskimgs[0], prefix, **specs)
-        cleaned = _clean_record(record)
-        cleaned.update({'paths': paths})
-        return cleaned
+                catalogID))
+        written = self.download(bbox, daskimgs[0], record, file_header,
+                                **specs)
+        return written
         
     def search(self, bbox):
         """Search the catalog for relevant imagery."""
         startDate, endDate = _enforce_date_formatting(**self.specs)
-        records = catalog.search(searchAreaWkt=bbox.wkt,
-                             filters=self.search_filters,
+        records = self._catalog.search(searchAreaWkt=bbox.wkt,
+                             filters=self._search_filters,
                              startDate=startDate,
                              endDate=endDate)
         records = [r for r in records if self._well_overlapped(bbox, r)]
@@ -168,8 +186,8 @@ class DGImageGrabber(object):
     def search_latlon(self, lat, lon):
         """Search the catalog for relevant imagery."""
         startDate, endDate = _enforce_date_formatting(**self.specs)
-        records = catalog.search_point(lat, lon,
-                                   filters=self.search_filters,
+        records = self._catalog.search_point(lat, lon,
+                                   filters=self._search_filters,
                                    startDate=startDate,
                                    endDate=endDate)
         records.sort(key=lambda r: r['properties']['timestamp'], reverse=True)
@@ -177,7 +195,7 @@ class DGImageGrabber(object):
 
     def search_id(self, catalogID, *args):
         """Retrieve catalog record for input catalogID."""
-        return catalog.get(catalogID)
+        return self._catalog.get(catalogID)
 
     def search_clean(self, bbox, N_records=10):
         """Search the catalog for relevant imagery.
@@ -202,6 +220,9 @@ class DGImageGrabber(object):
 
         Returns:  Lists of the dask image objects and the associaed records.
         """
+        if specs['pansharpen'] is None:
+            specs['pansharpen'] = self._check_highres(bbox)
+            
         daskimgs, recs_retrieved = [], []
         while len(records) > 0 and len(daskimgs) < N_images:
             record = records.pop()
@@ -221,6 +242,17 @@ class DGImageGrabber(object):
             len(daskimgs), N_images), flush=True)
         return daskimgs, recs_retrieved
 
+    def download(self, bbox, daskimg, record, file_header, **specs):
+        """Download dask image asset and write to disk.
+
+        Returns: Asset record, cleaned and with paths to images added.
+        """
+        prefix = _build_filename(bbox, record, file_header)
+        paths = self.write_img(daskimg, prefix, **specs)
+        cleaned = _clean_record(record)
+        cleaned.update({'paths': paths})
+        return cleaned
+    
     def write_img(self, daskimg, file_prefix, write_styles=[], **specs):
         """Write a DG dask image to file.
                               
@@ -229,44 +261,41 @@ class DGImageGrabber(object):
                 
         Returns: Local paths to images.
         """
-        paths = []
+        output_paths = []
         styles = [style.lower() for style in write_styles]
 
         # deprecated: DG color correction 
         if 'dgdra' in styles:
-            filename = write_dg_dra(daskimg, file_prefix)
-            paths.append(filename)
+            outpath = write_dg_dra(daskimg, file_prefix)
+            output_paths.append(outpath)
             styles.remove('dgdra')
             if not styles:
                 return paths
 
         # grab the raw geotiff
         bands = daskimg.shape[0]
-        tifname = file_prefix + '.tif'
-        print('\nStaging at {}\n'.format(tifname), flush=True)
+        path = file_prefix + '.tif'
+        print('\nStaging at {}\n'.format(path), flush=True)
         if bands == 4:
-            daskimg.geotiff(path=tifname, bands=[2,1,0], **specs)
+            daskimg.geotiff(path=path, bands=[2,1,0], **specs)
         elif bands == 8:
-            daskimg.geotiff(path=tifname, bands=[4,2,1], **specs)
+            daskimg.geotiff(path=path, bands=[4,2,1], **specs)
+        output_paths.append(path)
 
-        # possibilities that ask for color correction
-        rough_img = color.coarse_adjust(tifffile.imread(tifname))
+        def correct_and_write(img, path, style):
+            """Correct color and write to file."""
+            corrected = color.STYLES[style](img)
+            outpath = path.split('.tif')[0] + '-' + style + '.png'
+            print('\nStaging at {}\n'.format(outpath), flush=True)
+            plt.imsave(outpath, corrected)
+            return outpath
+        
+        img = color.coarse_adjust(tifffile.imread(path))
         for style in styles:
-            if style in color.STYLE_PARAMS.keys():
-                cc = color.ColorCorrect(**color.STYLE_PARAMS[style])
-                corrected = cc.correct_and_reduce(rough_img)
-                filename = tifname.split('.tif')[0] + '-' + style + '.png'
-                print('\nSaving to {}\n'.format(filename), flush=True)
-                plt.imsave(filename, corrected)
-                paths.append(filename)
-
-        # if no other styles, keep the raw geotiff
-        if paths:
-            os.remove(tifname)
-        else:
-            paths.append(tifname)  
+            if style in color.STYLES.keys():
+                output_paths.append(correct_and_write(img, path, style))
     
-        return paths
+        return output_paths
 
     # Functions to enforce certain specs.
 
