@@ -1,4 +1,4 @@
-Flask
+Quart
 gunicorn
 requests
 watson-developer-cloud
@@ -12,3 +12,4 @@ gbdxtools
 google-cloud-storage
 planet
 scikit-image
+uvloop
