@@ -1,4 +1,4 @@
 
-web: gunicorn app:app
+web: gunicorn webapp:app
 
 worker: python3 webapp/worker.py
