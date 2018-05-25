@@ -143,11 +143,11 @@ class PlanetGrabber(object):
 
     async def _grab_scene(self, bbox, scene, file_header, **specs):
         """Retrieve, download, and reprocess scene assets."""
-        scene_assets, scene_records = await self._retrieve_for_scene(scene)
+        active_assets = await self._retrieve_for_scene(scene)
         print('Retrieved {}\nDownloading...'.format(
-              [r['id'] for r in scene_records]), flush=True)
-        paths = self._download_for_scene(scene_assets, file_header)
-        written = self._reprocess(bbox, scene_records, paths, **specs)
+              [r['id'] for r in scene]), flush=True)
+        staged_assets = self._download_for_scene(active_assets, file_header)
+        written = self._reprocess(bbox, staged_assets, scene, **specs)
         return written
 
     async def grab_by_id(self, bbox, catalogID, item_type, file_header='',
@@ -156,14 +156,13 @@ class PlanetGrabber(object):
         specs = self.specs.copy()
         specs.update(**grab_specs)
         
-        record = self.search_id(catalogID, item_type)
-        asset, record = await self.retrieve_asset(record)
-        
-        if not asset:
+        active_assets = await self.retrieve_assets(catalogID, item_type)
+        if not active_assets:
             raise Exception('Catolog entry for id {} not returned.'.format(
                 catalogID))
-        path = self.download(asset, file_header)
-        written = self._reprocess(bbox, [record], [path], **specs)
+
+        staged_assets = self._download_for_scene([active_assets], file_header)
+        written = self._reprocess(bbox, staged_assets, [record], **specs)
         
         return written
     
@@ -204,47 +203,66 @@ class PlanetGrabber(object):
         return [_clean_record(r) for r in records[:N_records]]
 
     async def _retrieve_for_scene(self, scene):
-        tasks = [self.retrieve_asset(record) for record in scene]
+        """Schedule asset retrieval for records in scene.
+
+        Returns: List of dicts of activated assets.
+        """
+        tasks = [
+            self.retrieve_assets(
+                record['id'], record['properties']['item_type'])
+            for record in scene
+        ]
         done, _ = await asyncio.wait(tasks)
-        assets, records = zip(*[future.result() for future in done])
-        return assets, records
+        return [task.result() for task in done]
     
-    async def retrieve_asset(self, record):
-        """Activate an asset and add its reference to the record."""
-        assets = self._client.get_assets_by_id(
-            record['properties']['item_type'], record['id']).get()
-        asset, asset_type = self._activate(assets)
-        print('Activating {}: {}'.format(record['id'], asset_type))
+    async def retrieve_assets(self, catalogID, item_type):
+        """Initiate and monitor asset activation.
+
+        Returns: Dict of activated assets.
+        """
+        assets = self._client.get_assets_by_id(item_type, catalogID).get()
+        activated = self._activate(assets)
+        print('Activating {}: {}'.format(catalogID, list(activated.keys())))
         print('This could take several minutes.', flush=True)
-        while not self._is_active(asset):
+        while not self._are_active(list(activated.values())):
             await asyncio.sleep(WAITTIME)
-            assets = self._client.get_assets_by_id(
-                record['properties']['item_type'], record['id']).get()
-            asset = assets[asset_type]
-        record['properties'].update({'asset_type': asset_type})
-        return asset, record
+            assets = self._client.get_assets_by_id(item_type, catalogID).get()
+            activated = {asset_type: assets[asset_type] for asset_type
+                          in activated.keys()}
+        return activated
 
     def _activate(self, assets):
-        """Activate the best available asset."""
-        asset_types = self.specs['asset_types'].copy()
-        while asset_types:
-            asset_type = asset_types.pop()
+        """Activate assets.
+
+        Returns:  Dict of asset_types and activated asset records.
+        """
+        activated = {}
+        for asset_type in self.specs['asset_types']:
             if asset_type in assets.keys():
                 asset = assets[asset_type]
                 self._client.activate(asset)
-                break
-        return asset, asset_type
-            
+                activated.update({asset_type: asset})
+        return activated
+
+    def _are_active(self, assets):
+        """Check list of assets for activation status."""
+        for asset in assets:
+            if asset['status'] != 'active':
+                return False
+        return True
+    
     def _is_active(self, asset):
         """Check asset activation status."""
         return True if asset['status'] == 'active' else False
 
-    def _download_for_scene(self, assets, file_header):
+    def _download_for_scene(self, active_assets, file_header):
         """Download mulitple assets."""
-        paths = []
-        for asset in assets:
-            paths.append(self.download(asset, file_header))
-        return paths
+        staged = [d.copy() for d in active_assets]
+        for asset_dict in staged:
+            for asset_type, asset in asset_dict.items():
+                path = self.download(asset, file_header)
+                asset_dict[asset_type] = path
+        return staged
             
     def download(self, asset, file_header):
         """Download an asset."""
@@ -253,23 +271,28 @@ class PlanetGrabber(object):
         body.write(file=path)
         return path
 
-    def _reprocess(self, bbox, records, paths, **specs):
+    def _reprocess(self, bbox, staged_assets, records, **specs):
         """Run combined geo- and color- postprocessing routines.
 
         Returns: Cleaned, combined record, including paths to final images.
         """
-        item_type, asset_type = _get_scene_types(records)
         source_epsg_codes = [_get_epsg_code([record]) for record in records]
         target_epsg_code = _get_epsg_code(_sort_by_overlap(bbox, records))
-        output_bands = _get_bandmap(item_type, asset_type)
         footprint = bbox.intersection(_get_footprint(records))
-        
+        item_type = records[0]['properties']['item_type']
+
         scene_record = _merge_records(
             [_clean_record(record) for record in records])
-        scene_path = self.geo_process(
-            footprint, paths, source_epsg_codes, target_epsg_code, output_bands)
-        output_paths = self.color_process(scene_path, asset_type, **specs)
-        scene_record.update({'paths': output_paths})
+        scene_record.update({'paths': []})
+
+        for asset_type in set([k for sa in staged_assets for k in sa.keys()]):
+            output_bands = _get_bandmap(item_type, asset_type)
+            paths = [sa[asset_type] for sa in staged_assets] 
+            merged_path = self.geo_process(
+                footprint, paths,
+                source_epsg_codes, target_epsg_code, output_bands)
+            output_paths = self.color_process(merged_path, asset_type, **specs)
+            scene_record['paths'] += output_paths
         return scene_record
 
     def geo_process(self, footprint, paths, source_epsg_codes, target_epsg_code,
@@ -323,9 +346,10 @@ class PlanetGrabber(object):
             # add this minimal tweak, since Planet visual is already corrected:
             output_paths.append(correct_and_write(img, path, 'expanded'))
 
-        for style in styles:
-            if style in color.STYLES.keys():
-                output_paths.append(correct_and_write(img, path, style))
+        else: 
+            for style in styles:
+                if style in color.STYLES.keys():
+                    output_paths.append(correct_and_write(img, path, style))
 
         return output_paths
 
@@ -489,19 +513,6 @@ def _clean_record(record):
         if k in keymap.keys()})
     cleaned['clouds'] *= 100
     return cleaned
-
-def _get_scene_types(records):
-    """Extract (common) item and asset types from records."""
-    item_type = records[0]['properties']['item_type']
-    asset_type = records[0]['properties']['asset_type']
-    for record in records[1:]:
-        it = record['properties']['item_type']
-        at = record['properties']['asset_type']
-        if (it != item_type or at != asset_type):
-            raise ValueError('Cannot merge different item or ' +
-                'asset types {}/{}: {}/{}'.format(
-                it, item_type, at, asset_type))
-    return item_type, asset_type
 
 def _get_epsg_code(records):
     """Extract an EPSG code.
