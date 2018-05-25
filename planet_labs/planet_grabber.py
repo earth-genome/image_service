@@ -127,7 +127,13 @@ class PlanetGrabber(object):
         ]
 
         done, _ = await asyncio.wait(grab_tasks)
-        return [future.result() for future in done]
+        recs_written = []
+        for task in done:
+            try:
+                recs_written.append(task.result())
+            except Exception as e:
+                print('During _grab_scene(): {}'.format(repr(e)))
+        return recs_written
 
     def _prep_scenes(self, bbox, **specs):
         """Search and group search records into scenes."""
