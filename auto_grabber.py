@@ -1,12 +1,19 @@
 """Classes for automated pulling of imagery. 
 
 --- --- 
-WIP:  Currently the usage examples below are disabled; only the interface
-through the image_service Quart web app (which supplies it's own event loop
-manager) is functioning.  Any of these functions can be restored by adding
-a wrapper:
-loop = asyncio.get_event_loop()
-output = loop.run_until_complete(<function to run>)
+WIP:  Currently these routines are tuned to run in the image_service Quart
+web app. To run locally, simply decorate any async method with @loop, or
+at runtime create a scheduled version of the function by passing it through
+loop() explicitly, e.g. to pull for a bbox: 
+
+> ag = AutoGrabber(bucket_name, specs_filename='specs.json', **more_image_specs)
+> puller = loop(ag.pull)
+> records = puller(bbox, **override_image_specs)
+
+This functionality could be integrated better with a meta class or a
+class-attribute flag a la reduce_to_ubyte() in postprocessing/color.py.
+The minimal asynchronicity here could also be disable entirely by
+search-and-deleting the async and await keywords.  
 --- ---
 
 Usage:
@@ -116,6 +123,14 @@ WIRE_END_DATE = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
 
 WIRE_BUCKET = 'newswire-images'
 
+def loop(function):
+    """Scheduling wrapper to run async functions locally."""
+    def scheduled(*args, **kwargs):
+        loop = asyncio.get_event_loop()
+        output = loop.run_until_complete(asyncio.ensure_future(
+                                         function(*args, **kwargs)))
+        return output
+    return scheduled
 
 class AutoGrabber(object):
     """Class to pull images.
@@ -128,8 +143,9 @@ class AutoGrabber(object):
         provider_classes: dict with class instantiators for pulling images,
             from modules in this repo; default PROVIDER_CLASSES above
         staging_dir: directory for local staging of images
-        image_specs: dict of catalog search and image size specs
         bucket_tool: class instance to access Google Cloud storage bucket
+        logger: a Python logging.getLogger instance
+        image_specs: dict of catalog search and image size specs
     """
     
     def __init__(self,
@@ -137,6 +153,7 @@ class AutoGrabber(object):
                  providers=PROVIDER_CLASSES.keys(),
                  staging_dir=STAGING_DIR,
                  specs_filename=None,
+                 log_dest=sys.stderr,
                  **image_specs):
         
         self.provider_classes = {k:v for k,v in PROVIDER_CLASSES.items()
@@ -154,6 +171,8 @@ class AutoGrabber(object):
         except Exception as e:
             print('Bucket name not recognized: {}'.format(repr(e)))
             raise
+
+        self.logger = log_utilities.get_stream_logger(log_dest)
         
         self.image_specs = DEFAULT_IMAGE_SPECS
         # two possible ways to override default image specs:
@@ -194,10 +213,13 @@ class AutoGrabber(object):
 
         recs_written = []
         for future in asyncio.as_completed(grab_tasks):
-            written = await future
-            urls = self._upload(written.pop('paths'))
-            written.update({'urls': urls})
-            recs_written.append(written)
+            try: 
+                written = await future
+                urls = self._upload(written.pop('paths'))
+                written.update({'urls': urls})
+                recs_written.append(written)
+            except Exception:
+                self.logger.exception('Processing grab_tasks\n')
 
         print('Pulled {} scene(s).\n'.format(len(recs_written)), flush=True)
         return recs_written
@@ -209,15 +231,19 @@ class AutoGrabber(object):
         specs.update(image_specs)
         
         grabber = self.provider_classes[provider](**specs)
-        record = await grabber.grab_by_id(
-            bbox, catalogID, item_type, 
-            file_header=os.path.join(self.staging_dir, ''),
-            **specs)
-        urls = self._upload(record.pop('paths'))
-        record.update({'urls': urls})
+        try: 
+            record = await grabber.grab_by_id(
+                bbox, catalogID, item_type, 
+                file_header=os.path.join(self.staging_dir, ''),
+                **specs)
+            urls = self._upload(record.pop('paths'))
+            record.update({'urls': urls})
+        except Exception:
+            self.logger.exception('Pulling for ID {}\n'.format(catalogID))
+            
         return record
 
-    def pull_for_story(self, story, **image_specs):
+    async def pull_for_story(self, story, **image_specs):
         """Pull images for all bboxes in a DBItem story."""
         
         print('Story: {}\n'.format(story.idx))
@@ -230,7 +256,7 @@ class AutoGrabber(object):
         image_records = []
         for name, data in core_locations.items():
             bbox = geometry.box(*data['boundingbox'])
-            records = self.pull(bbox, **image_specs)
+            records = await self.pull(bbox, **image_specs)
             core_locations[name].update({'images': records})
             image_records += records
                 
@@ -257,7 +283,7 @@ class AutoGrabber(object):
                 url = self.bucket_tool.upload_blob(path, os.path.split(path)[1])
                 urls.append(url)
             except Exception as e:
-                print('Bucket error for {}: {}\n'.format(path, repr(e)))
+                self.logger.exception('Bucket error for {}\n'.format(path))
             os.remove(path)
         print('Uploaded images:\n{}\n'.format(urls), flush=True)
         return urls
@@ -294,9 +320,6 @@ class AutoGrabber(object):
 class BulkGrabber(AutoGrabber):
     """Descendant class to pull images in bulk.
 
-    Descendant attribute:
-        logger: a Python logging.getLogger instance
-
     Descendant methods:
         pull_for_geojson: Pull images for geojsons in a FeatureCollection.
         pull_for_wire: Pull images for stories in database between given dates.
@@ -306,14 +329,8 @@ class BulkGrabber(AutoGrabber):
         super().__init__(bucket_name,
                          specs_filename=specs_filename,
                          **image_specs)
-        log_dir = os.path.join(os.path.dirname(__file__), 'AutoGrabberLogs')
-        log_filename = ('AutoGrabber' + datetime.datetime.now().isoformat() +
-                            '.log')
-        self.logger = log_utilities.build_logger(log_dir,
-                                                 log_filename,
-                                                 logger_name='auto_grabber')
 
-    def pull_for_geojson(self, features_filename):
+    async def pull_for_geojson(self, features_filename):
         """Pull images for geojsons in a FeatureCollection.
 
         Argument:
@@ -338,7 +355,7 @@ class BulkGrabber(AutoGrabber):
             try:
                 polygon = geometry.asShape(feature['geometry'])
                 bbox = geometry.box(*polygon.bounds)
-                records = self.pull(bbox, **feature['properties'])
+                records = await self.pull(bbox, **feature['properties'])
             except Exception as e:
                 self.logger.exception('Pulling for bbox {}\n'.format(
                     bbox.bounds))
@@ -351,7 +368,7 @@ class BulkGrabber(AutoGrabber):
         print('complete')
         return json.dumps(geojsons)
 
-    def pull_for_wire(self,
+    async def pull_for_wire(self,
                       db=STORY_SEEDS,
                       category=DB_CATEGORY,
                       wireStartDate=WIRE_START_DATE,
@@ -388,7 +405,7 @@ class BulkGrabber(AutoGrabber):
             except KeyError:
                 continue
             try: 
-                image_records = self.pull_for_story(
+                image_records = await self.pull_for_story(
                     s, bbox_rescaling=bbox_rescaling)
             except Exception as e:
                 self.logger.exception('Pulling for story {}\n'.format(s.idx))
