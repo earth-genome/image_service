@@ -71,20 +71,11 @@ def merge(filenames, clean=True):
     Returns: New GeoTiff filename (based on the first input GeoTiff name) 
     """
     targetname = filenames[0].split('.tif')[0] + '-merged.tif'
-    # To keep this out of memory, create the target file with gdal_merge
-    # but then copy data with gdalwarp:
-    commands = [
-        'gdal_merge.py',
-        '-createonly',
-        '-co', 'COMPRESS=LZW',
-        '-of', 'GTiff',
-        '-o', targetname,
-        *filenames
-    ]
-    subprocess.call(commands)
     commands = [
         'gdalwarp',
         '--config', 'GDAL_CACHEMAX', '1000', '-wm', '1000',
+        '-r', 'bilinear',
+        '-co', 'COMPRESS=LZW',
         *filenames, targetname]
     subprocess.call(commands)
     if clean:
@@ -92,7 +83,7 @@ def merge(filenames, clean=True):
             os.remove(filename)
     return targetname
 
-# If an alpha band is kept through crop and merge, gdal_merge will use it to
+# If an alpha band is kept through crop and merge, gdalwarp will use it to
 # correctly handle no-data values in merging partial scenes.
 # Thus, reband() should be reserved for a final step in processing:
 
