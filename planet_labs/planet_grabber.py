@@ -366,7 +366,7 @@ class PlanetGrabber(object):
         """
         scenes = []
         records = json.loads(json.dumps(records))
-        while len(scenes) < specs['N_images']:
+        while records and len(scenes) < specs['N_images']:
             groups = self._pop_day(records)
             groups = self._filter_by_overlap(bbox, groups)
             groups = self._filter_copies(groups)
@@ -390,7 +390,7 @@ class PlanetGrabber(object):
         date0 = dateutil.parser.parse(record['properties']['acquired']).date()
 
         groups = {(sat_id, item_type): {'records': [record]}}
-        while True:
+        while records:
             record = records.pop()
             date = dateutil.parser.parse(
                 record['properties']['acquired']).date()
