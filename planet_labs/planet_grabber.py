@@ -108,6 +108,7 @@ class PlanetGrabber(object):
 
     async def grab(self, bbox, file_header, **grab_specs):
         """Grab the most recent available images consistent with specs.
+    
         Arguments:
             bbox: a shapely box
             file_header: optional prefix for output image files
@@ -131,11 +132,14 @@ class PlanetGrabber(object):
             try:
                 recs_written.append(task.result())
             except Exception as e:
-                print('During _grab_scene(): {}'.format(repr(e)))
+                print('During grab_scene(): {}'.format(repr(e)))
         return recs_written
 
     def prep_scenes(self, bbox, **grab_specs):
-        """Search and group search records into scenes."""
+        """Search and group search records into scenes.
+
+        Returns: List of lists of records.  
+        """
         specs = self.specs.copy()
         specs.update(**grab_specs)
         records = self.search(bbox)[::-1]
