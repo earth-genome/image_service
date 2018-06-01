@@ -1,0 +1,7 @@
+coveralls>=0.4
+cython
+enum34
+numpy>=1.10.0
+pytest
+setuptools>=0.9.8
+wheel
