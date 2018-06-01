@@ -11,12 +11,13 @@ ADD ./webapp/requirements.txt /tmp/requirements.txt
 
 # Install dependencies
 RUN pip install -r /tmp/requirements.txt
+RUN pip install Quart uvloop
 
 # Add our code
 ADD ./webapp /opt/webapp/
 WORKDIR /opt/webapp
 
 # Run the app.  CMD is required to run on Heroku.  $PORT is set by Heroku.
-CMD gunicorn --bind 0.0.0.0:$PORT --worker-class quart.worker.GunicornUVLoopWorker wsgi --timeout 6000 
+# CMD gunicorn --bind 0.0.0.0:$PORT --worker-class quart.worker.GunicornUVLoopWorker wsgi --timeout 6000 
 
-# CMD python3 app.py
+CMD python3 app.py
