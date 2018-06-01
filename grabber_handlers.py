@@ -123,6 +123,8 @@ WIRE_END_DATE = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
 
 WIRE_BUCKET = 'newswire-images'
 
+DEFAULT_BUCKET = 'bespoke-images'
+
 def loop(function):
     """Scheduling wrapper to run async functions locally."""
     def scheduled(*args, **kwargs):
@@ -160,7 +162,7 @@ class GrabberHandler(object):
     """
     
     def __init__(self,
-                 bucket_name,
+                 bucket_name=DEFAULT_BUCKET,
                  providers=PROVIDER_CLASSES.keys(),
                  staging_dir=STAGING_DIR,
                  log_dest=sys.stderr,
@@ -185,7 +187,7 @@ class GrabberHandler(object):
             raise
 
         self.logger = log_utilities.get_stream_logger(log_dest)
-        
+
         with open(specs_filename, 'r') as f:
             self.image_specs = json.load(f)
         self.image_specs.update(image_specs)
@@ -322,12 +324,12 @@ class StoryHandler(GrabberHandler):
         async pull_for_wire: Pull images for stories in a database.
     """
     def __init__(self,
-                 bucket_name,
+                 bucket_name=WIRE_BUCKET,
                  specs_filename=os.path.join(os.path.dirname(__file__),
                                              'default_story_specs.json'),
                  **image_specs):
 
-        super().__init__(bucket_name,
+        super().__init__(bucket_name=bucket_name,
                          specs_filename=specs_filename,
                          **image_specs)
 
@@ -412,11 +414,8 @@ class GeoJSONHandler(GrabberHandler):
     Descendant method:
         async pull_for_geojson: Pull images for geojsons in a FeatureCollection.
     """
-    def __init__(self, bucket_name, specs_filename=None, **image_specs):
-
-        super().__init__(bucket_name,
-                         specs_filename=specs_filename,
-                         **image_specs)
+    def __init__(self, **specs):
+        super().__init__(**specs)
 
     async def pull_for_geojson(self, features_filename):
         """Pull images for geojsons in a FeatureCollection.
