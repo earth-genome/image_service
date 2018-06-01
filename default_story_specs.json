@@ -9,5 +9,14 @@
         "contrast",
         "dra",
         "desert"
-    ]
+    ],
+    "bbox_rescaling": 2,
+    "min_size": {
+        "digital_globe": 0.5,
+        "planet": 2.0
+    },
+    "max_size": {
+        "digital_globe": 5.0,
+        "planet": 20.0
+    }
 }
