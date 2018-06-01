@@ -7,20 +7,16 @@ import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 from quart import Quart, request
-from rq import Queue
-from worker import conn
+# from rq import Queue
+# from worker import conn
 
 sys.path.append('grab_imagery/story-seeds/')
-from grab_imagery import auto_grabber
-from grab_imagery.auto_grabber import PROVIDER_CLASSES
+from grab_imagery import grabber_handlers
+from grab_imagery.grabber_handlers import PROVIDER_CLASSES
 from grab_imagery import firebaseio
 
 # newswire
 DB_CATEGORY = '/WTL'
-WIRE_BUCKET = 'newswire-images'
-
-# bespoke imagery
-BUCKET = 'bespoke-images'
 
 # for help messaging
 EXAMPLE_ARGS = ('provider=digital_globe' + 
@@ -29,7 +25,9 @@ EXAMPLE_ARGS = ('provider=digital_globe' +
 
 
 app = Quart(__name__)
-q = Queue(connection=conn)
+# from flask import Flask, request
+# app = Flask(__name__)
+# q = Queue(connection=conn)
 
 @app.route('/')
 def help():
@@ -56,6 +54,7 @@ def help():
 
 @app.route('/search')
 async def search():
+# def search():
     """Search image availability for give lat, lon."""
 
     notes = ('(Provider, lat, lon are required.)')
@@ -68,14 +67,15 @@ async def search():
 
     grabber = PROVIDER_CLASSES[provider](**specs)
 
-    job = q.enqueue(grabber.search_latlon_clean, lat, lon,
-                    N_records=specs['N_images'])
-    import time
-    time.sleep(10)
-    return json.dumps(job.result)
-    #records = grabber.search_latlon_clean(
-    #    lat, lon, N_records=specs['N_images'])
-    #return json.dumps(records)
+# Testing job queuing: 
+    #job = q.enqueue(grabber.search_latlon_clean, lat, lon,
+    #                N_records=specs['N_images'])
+    #import time
+    #time.sleep(5)
+    #return json.dumps(job.result)
+    records = grabber.search_latlon_clean(
+        lat, lon, N_records=specs['N_images'])
+    return json.dumps(records)
 
 @app.route('/search-id')
 def search_id():
@@ -113,8 +113,8 @@ async def pull():
         return 'Scale (in km) is required.<br>{}'.format(msg)
 
     specs.update({'providers': [provider]})
-    bbox = auto_grabber.geobox.bbox_from_scale(lat, lon, scale)
-    grabber = auto_grabber.AutoGrabber(BUCKET, **specs)
+    bbox = grabber_handlers.geobox.bbox_from_scale(lat, lon, scale)
+    grabber = grabber_handlers.GrabberHandler(**specs)
     records = await grabber.pull(bbox)
     return json.dumps(records)
 
@@ -137,9 +137,9 @@ async def pull_by_id():
     if not scale:
         return 'Scale (in km) is required.<br>{}'.format(msg)
     
-    bbox = auto_grabber.geobox.bbox_from_scale(lat, lon, scale)
-    grabber = auto_grabber.AutoGrabber(
-        BUCKET, providers=[provider], N_images=1)
+    bbox = grabber_handlers.geobox.bbox_from_scale(lat, lon, scale)
+    grabber = grabber_handlers.GrabberHandler(providers=[provider],
+                                              N_images=1)
     record = await grabber.pull_by_id(provider, bbox, catalogID, item_type)
     return json.dumps(record)
     
@@ -168,7 +168,7 @@ async def pull_for_story():
     except ValueError as e:
         return '{}<br>{}<br>'.format(repr(e), msg)
 
-    grabber = auto_grabber.AutoGrabber(WIRE_BUCKET, N_images=N_images)
+    grabber = grabber_handlers.StoryHandler(N_images=N_images)
     records = await grabber.pull_for_story(story)
 
     return json.dumps(records)

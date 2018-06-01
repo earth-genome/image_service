@@ -14,3 +14,4 @@ services:
     volumes:
       - ./webapp:/opt/webapp
     tty: true
+
