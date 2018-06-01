@@ -143,7 +143,10 @@ class DGImageGrabber(object):
         return recs_written
 
     def prep_scenes(self, bbox, **grab_specs):
-        """Search and collect available dask images and their records."""
+        """Search and collect available dask images and their records.
+
+        Returns: Iterator over pairs of form (dask image, record).
+        """
         specs = self.specs.copy()
         specs.update(**grab_specs)
         records = self.search(bbox)[::-1]
