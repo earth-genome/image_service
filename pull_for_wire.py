@@ -16,8 +16,6 @@ import sys
 sys.path.append('../')
 from grab_imagery import grabber_handlers
 
-WIRE_BUCKET = 'newswire-images'
-
 with open('default_story_specs.json', 'r') as f:
     DEFAULT_SPECS = json.load(f)
 
@@ -26,10 +24,17 @@ if __name__ == '__main__':
         description='Pull images for stories from the wire.'
     )
     parser.add_argument(
+        '-p', '--provider',
+        type=str,
+        help='From {}; if none specified, both with be used.'.format(
+            list(grabber_handlers.PROVIDER_CLASSES.keys()))
+    )
+    parser.add_argument(
         '-s', '--specs_filename',
         type=str,
-        help=('Json-formatted file containing image specs. ' +
-              'Format and defaults are specified in default_story_specs.json.')
+        default='default_story_specs.json',
+        help=('Json-formatted file containing image specs, defautl: {}'.format(
+             'default_story_specs.json'))
     )
     parser.add_argument(
         '-N', '--N_images',
@@ -39,8 +44,14 @@ if __name__ == '__main__':
             DEFAULT_SPECS['N_images']))
     )
     kwargs = vars(parser.parse_args())
-    grabber = grabber_handlers.StoryHandler(WIRE_BUCKET, **kwargs)
-    grabber.pull_for_wire()
+    provider = kwargs.pop('provider')
+    if provider:
+        kwargs['providers'] = [provider]
+    else:
+        kwargs['providers'] = list(grabber_handlers.PROVIDER_CLASSES.keys())
+    grabber = grabber_handlers.StoryHandler(**kwargs)
+    puller = grabber_handlers.loop(grabber.pull_for_wire)
+    puller()
 
 
 

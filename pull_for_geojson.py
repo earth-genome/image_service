@@ -29,28 +29,43 @@ if __name__ == '__main__':
         help='Name of .json file containing GeoJSON FeatureCollection.'
     )
     parser.add_argument(
-        'bucket_name',
+        '-b', '--bucket_name',
         type=str,
-        help='Name of existing cloud storage bucket.'
+        default=grabber_handlers.DEFAULT_BUCKET,
+        help='Name of existing cloud storage bucket, default: {}'.format(
+            grabber_handlers.DEFAULT_BUCKET)
+    )
+    parser.add_argument(
+        '-p', '--provider',
+        type=str,
+        help='From {}; if none specified, both with be used.'.format(
+            list(grabber_handlers.PROVIDER_CLASSES.keys()))
     )
     parser.add_argument(
         '-s', '--specs_filename',
         type=str,
-        help=('Json-formatted file containing image specs. ' +
-              'Format and defaults are specified in default_specs.json.')
+        default='default_specs.json',
+        help='Json-formatted file containing image specs, defautl: {}'.format(
+             'default_specs.json')
     )
     parser.add_argument(
         '-N', '--N_images',
         type=int,
         default=DEFAULT_SPECS['N_images'],
-        help=('Number of images to pull, default: {}'.format(
-            DEFAULT_SPECS['N_images']))
+        help='Number of images to pull, default: {}'.format(
+            DEFAULT_SPECS['N_images'])
     )
     kwargs = vars(parser.parse_args())
     features_filename = kwargs.pop('features_filename')
-    bucket_name = kwargs.pop('bucket_name')
-    grabber = grabber_handlers.GeoJSONHandler(bucket_name, **kwargs)
-    grabber.pull_for_geojson(features_filename)
+    provider = kwargs.pop('provider')
+    if provider:
+        kwargs['providers'] = [provider]
+    else:
+        kwargs['providers'] = list(grabber_handlers.PROVIDER_CLASSES.keys())
+    grabber = grabber_handlers.GeoJSONHandler(**kwargs)
+    puller = grabber_handlers.loop(grabber.pull_for_geojson)
+    puller(features_filename)
+    
 
             
 
