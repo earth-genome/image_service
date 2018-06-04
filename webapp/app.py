@@ -103,7 +103,9 @@ async def pull():
     """Pull images given lat, lon, and scale."""
 
     notes = ('(Provider, lat, lon, scale are required; give scale in km.)')
-    msg = _help_msg(request.base_url, EXAMPLE_ARGS + '&scale=1.0', notes)
+    msg = _help_msg(
+        request.base_url,
+        EXAMPLE_ARGS + '&scale=1.0&min_intersect=.9', notes)
 
     try:
         provider, lat, lon, scale, specs = _parse_geoloc(request.args)
@@ -196,7 +198,8 @@ def _parse_geoloc(args):
         'startDate': args.get('start'),
         'endDate': args.get('end'),
         'clouds': int(args.get('clouds', default=10)),# type=int),
-        'N_images': int(args.get('N', default=3))#, type=int)
+        'N_images': int(args.get('N', default=3)),#, type=int)
+        'min_intersect': float(args.get('min_intersect', default=.9))
     }
         
     return provider, lat, lon, scale, specs
