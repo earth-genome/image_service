@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tifffile
 
-sys.path.append('rio_hist/')
+sys.path.append('rio-hist/')
 from rio_hist import match
 
 IMAGE_EXTS = ('tif', 'jpg', 'png')
