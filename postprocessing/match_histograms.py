@@ -64,6 +64,8 @@ if __name__ == '__main__':
     
     src = load_img(args['src_filename'], src_ext)
     ref = load_img(args['ref_filename'], ref_ext)
+    if src.dtype != ref.dtype:
+        sys.exit('Dtypes {}, {} do not match.'.format(src.dtype, ref.dtype))
 
     matched = src.copy()
     for band in range(3):
