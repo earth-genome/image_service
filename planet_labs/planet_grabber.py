@@ -283,8 +283,8 @@ class PlanetGrabber(object):
 
         Returns: Cleaned, combined record, including paths to final images.
         """
-        source_epsg_codes = [_get_epsg_code([record]) for record in records]
-        target_epsg_code = _get_epsg_code(_sort_by_overlap(bbox, records))
+        source_epsg_codes = [_get_epsg_code(record) for record in records]
+        target_epsg_code = _get_epsg_code(_sort_by_overlap(bbox, records)[0])
         footprint = bbox.intersection(_get_footprint(records))
         item_type = records[0]['properties']['item_type']
 
@@ -317,18 +317,24 @@ class PlanetGrabber(object):
             
         Returns:  Path to output image.
         """
+        reprojected = []
+        if target_epsg_code:
+            for path, source_code in zip(paths, source_epsg_codes):
+                if source_code and source_code != target_epsg_code:
+                    path = gdal_routines.reproject(path, target_epsg_code)
+                reprojected.append(path)
+        else:
+            reprojected = paths
+
         reshaped = []
-        for path, source_code in zip(paths, source_epsg_codes):
-            if source_code != target_epsg_code:
-                path = gdal_routines.reproject(path, target_epsg_code)
-            path = gdal_routines.crop(path, footprint)
+        for path in reprojected:
+            path = gdal_routines.crop_and_reband(path, footprint, output_bands)
             reshaped.append(path)
          
         if len(reshaped) > 1:
             scene_path = gdal_routines.merge(reshaped)
         else:
             scene_path = reshaped[0]
-        scene_path = gdal_routines.reband(scene_path, output_bands)
         return scene_path
         
     def color_process(self, path, asset_type, write_styles=[], **specs):
@@ -462,10 +468,11 @@ class PlanetGrabber(object):
 # geometric utilities
 
 def _sort_by_overlap(bbox, records):
-    """Sort records in group by inverse area overlap with bbox."""
+    """Sort records in group by area of overlap with bbox (large to small)."""
     recs_sorted = sorted(
         records,
-        key= lambda rec: _get_overlap(bbox, geometry.asShape(rec['geometry'])))
+        key= lambda rec: _get_overlap(bbox, geometry.asShape(rec['geometry'])),
+        reverse=True)
     return recs_sorted
 
 def _get_overlap(bbox, footprint):
@@ -521,15 +528,13 @@ def _clean_record(record):
     cleaned['clouds'] *= 100
     return cleaned
 
-def _get_epsg_code(records):
-    """Extract an EPSG code.
-
-    If multiple records are given, the code from the last record
-    is returned.  The expectation (not required) that records will be
-    ordered inversely by overlap with the scene's boundingbox, so that the
-    projection is determined by the dominant component of the scene.
-    """
-    return records[-1]['properties']['epsg_code']
+def _get_epsg_code(record):
+    """Extract an EPSG code if available, or else return None."""
+    try:
+        code = record['properties']['epsg_code']
+    except KeyError:
+        code = None
+    return code
 
 def _get_bandmap(item_type, asset_type):
     """Find the band order for R-G-B bands."""
