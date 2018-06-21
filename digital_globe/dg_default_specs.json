@@ -13,7 +13,7 @@
 	"WORLDVIEW03_VNIR",
 	"GEOEYE01"
     ],
-    "proj": "EPSG:4326",
+    "proj": null,
     "write_styles": [
         "matte",
 	"contrast",

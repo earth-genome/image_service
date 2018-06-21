@@ -30,7 +30,7 @@ as of writing, takes form:
     "endDate": null,  # for catalog search
     "band_type": "MS",  # mulit-spectral
     "acomp": false,
-    "proj": "EPSG:4326",
+    "proj": null, # can be any EPSG, e.g. "EPSG:4326"
     "min_intersect": 0.9,  # min fractional overlap between bbox and scene
     "image_source": [
 	    "WORLDVIEW02",
@@ -50,9 +50,13 @@ The first three are are fairly comparable in resolution
 The latter two have resolution roughly half that and we decomissioned in 2015.
 
 The parameter pansharpen can take values None, False or True.  If None,
-_allow_highres() is called to determine whether pansharpen should
+_patch_null_specs() is called to determine whether pansharpen should
 be True or False according to whether image is smaller or larger than
 pansharp_scale.
+
+If the parameter proj is None, a Universal Transverse Mercator (UTM) projection
+is applied.  The appropriate EPSG code is computed once a bouning box is given,
+in the method _patch_null_specs().  
 
 A number of idiosyncrasies of the code, including use of asyncio, are
 applied to mirror the syntax of planet_grabber.
@@ -73,6 +77,7 @@ import tifffile
 import gbdxtools  # bug in geo libraries.  import this *after* shapely
 
 from geobox import geobox
+from geobox import projections
 from postprocessing import color
 
 # Default catalog and image parameters:
@@ -147,7 +152,7 @@ class DGImageGrabber(object):
 
         Returns: Iterator over pairs of form (dask image, record).
         """
-        specs = self.specs.copy()
+        specs = self._patch_null_specs(bbox)
         specs.update(**grab_specs)
         records = self.search(bbox)[::-1]
         daskimgs, recs_retrieved = self.retrieve(bbox, records, **specs)
@@ -155,14 +160,14 @@ class DGImageGrabber(object):
 
     async def grab_scene(self, bbox, scene, file_header, **grab_specs):
         """Download and reprocess scene assets."""
-        specs = self.specs.copy()
+        specs = self._patch_null_specs(bbox)
         specs.update(**grab_specs)
         written = self.download(bbox, *scene, file_header, **specs)
         return written
     
     def grab_by_id(self, bbox, catalogID, *args, file_header='', **grab_specs):
         """Grab and write image for a known catalogID."""
-        specs = self.specs.copy()
+        specs = self._patch_null_specs(bbox)
         specs.update(**grab_specs)
         
         record = self.search_id(catalogID)
@@ -222,10 +227,7 @@ class DGImageGrabber(object):
         Arugment records:  DG catalog records for the sought images.
 
         Returns:  Lists of the dask image objects and the associaed records.
-        """
-        if specs['pansharpen'] is None:
-            specs['pansharpen'] = self._check_highres(bbox)
-            
+        """         
         daskimgs, recs_retrieved = [], []
         while len(records) > 0 and len(daskimgs) < N_images:
             record = records.pop()
@@ -302,6 +304,16 @@ class DGImageGrabber(object):
 
     # Functions to enforce certain specs.
 
+    def _patch_null_specs(self, bbox):
+        """Determine pansharpening and geoprojection if none specified."""
+        specs = self.specs.copy()
+        if specs['pansharpen'] is None:
+            specs['pansharpen'] = self._check_highres(bbox)
+        if not specs['proj']:
+            code = projections.get_utm_code(bbox.centroid.y, bbox.centroid.x)
+            specs['proj'] = 'EPSG:{}'.format(code)
+        return specs
+
     def _check_highres(self, bbox):
         """Allow highest resolution when bbox smaller than pansharp_scale."""
         size = np.mean(geobox.get_side_distances(bbox))
@@ -375,7 +387,7 @@ def _clean_record(record):
 def _build_filename(bbox, record, file_header=''):
     """Build a filename for image output.
 
-    Uses: catalog id and date, centroid lat/lon, and optional file_header
+    Uses: catalog id and date, bbox lat/lon, and optional file_header
 
     Return: filename prefix, ready to append '.png', '.tif', etc.
     """
