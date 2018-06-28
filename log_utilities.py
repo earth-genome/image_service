@@ -20,4 +20,4 @@ def build_logger(directory, logfile, logger_name=__name__):
 def signal_handler(*args):
     print('KeyboardInterrupt: Writing logs before exiting...')
     logging.shutdown()
-    sys.exit(0)
+    os._exit(0)
