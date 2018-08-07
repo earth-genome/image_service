@@ -1,10 +1,11 @@
 """Classes for high-level management of image-grabbing processes.
 
 --- --- 
-WIP:  Currently these routines are tuned to run in the image_service Quart
-web app. To run locally, simply decorate any async method with @loop, or
-at runtime create a scheduled version of the function by passing it through
-loop() explicitly, e.g. to pull for a bbox: 
+WIP:  Originally written to run in a Quart web app, the async routines here
+have no event loops assigned a priori. To run any async method, simply edit
+this code to decorate it with @loop, or at runtime, create a scheduled version
+of the function by passing it through loop() explicitly.
+E.g. to pull for a bbox: 
 
 > g = GrabberHandler(bucket_name, specs_filename='specs.json',
                      **more_image_specs)
@@ -13,9 +14,6 @@ loop() explicitly, e.g. to pull for a bbox:
 
 Running from the interpreter, however, raises some issues with clean
 shutdown on KeyboardInterrupt.  See loop() below.  
-
-The minimal asynchronicity here could also be disabled entirely by
-search-and-deleting the async and await keywords.  
 --- ---
 
 Usage:
@@ -223,8 +221,10 @@ class GrabberHandler(object):
 
         recs_written = []
         for task in asyncio.as_completed(grab_tasks):
+            print('Task: {}'.format(task))
             try: 
                 written = await task
+                print('Task returned.  Uploading.')
                 urls = self._upload(written.pop('paths'))
                 written.update({'urls': urls})
                 recs_written.append(written)
