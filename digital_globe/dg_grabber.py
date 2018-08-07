@@ -165,7 +165,8 @@ class DGImageGrabber(object):
         written = self.download(bbox, *scene, file_header, **specs)
         return written
     
-    def grab_by_id(self, bbox, catalogID, *args, file_header='', **grab_specs):
+    async def grab_by_id(self, bbox, catalogID, *args, file_header='',
+                         **grab_specs):
         """Grab and write image for a known catalogID."""
         specs = self._patch_null_specs(bbox)
         specs.update(**grab_specs)
