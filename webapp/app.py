@@ -1,19 +1,19 @@
+"""A Flask web app to search and pull satellite imagery."""
 
 import os
 import sys
 import json
 import datetime
 
+from flask import Flask, request
 import numpy as np
-import matplotlib.pyplot as plt
-from quart import Quart, request
-# from rq import Queue
-# from worker import conn
+from rq import Queue
 
-sys.path.append('grab_imagery/story-seeds/')
-from grab_imagery import grabber_handlers
-from grab_imagery.grabber_handlers import PROVIDER_CLASSES
 from grab_imagery import firebaseio
+from grab_imagery.geobox import geobox
+from grab_imagery.grabber_handlers import PROVIDER_CLASSES
+import puller_wrappers
+from worker import connection
 
 # newswire
 DB_CATEGORY = '/WTL'
@@ -23,11 +23,8 @@ EXAMPLE_ARGS = ('provider=digital_globe' +
                 '&lat=37.7749&lon=-122.4194' +
                 '&start=2018-01-01&end=2018-05-02&clouds=10&N=3')
 
-
-app = Quart(__name__)
-# from flask import Flask, request
-# app = Flask(__name__)
-# q = Queue(connection=conn)
+app = Flask(__name__)
+q = Queue(connection=connection)
 
 @app.route('/')
 def help():
@@ -53,8 +50,7 @@ def help():
     return msg
 
 @app.route('/search')
-async def search():
-# def search():
+def search():
     """Search image availability for give lat, lon."""
 
     notes = ('(Provider, lat, lon are required.)')
@@ -66,13 +62,6 @@ async def search():
         return '{}<br>{}<br>'.format(repr(e), msg)
 
     grabber = PROVIDER_CLASSES[provider](**specs)
-
-# Testing job queuing: 
-    #job = q.enqueue(grabber.search_latlon_clean, lat, lon,
-    #                N_records=specs['N_images'])
-    #import time
-    #time.sleep(5)
-    #return json.dumps(job.result)
     records = grabber.search_latlon_clean(
         lat, lon, N_records=specs['N_images'])
     return json.dumps(records)
@@ -96,10 +85,9 @@ def search_id():
     grabber = PROVIDER_CLASSES[provider]()
     record = grabber.search_id(catalogID, item_type)
     return json.dumps(record)
-
     
 @app.route('/pull')
-async def pull():
+def pull():
     """Pull images given lat, lon, and scale."""
 
     notes = ('(Provider, lat, lon, scale are required; give scale in km.)')
@@ -115,13 +103,18 @@ async def pull():
         return 'Scale (in km) is required.<br>{}'.format(msg)
 
     specs.update({'providers': [provider]})
-    bbox = grabber_handlers.geobox.bbox_from_scale(lat, lon, scale)
-    grabber = grabber_handlers.GrabberHandler(**specs)
-    records = await grabber.pull(bbox)
-    return json.dumps(records)
+    bbox = geobox.bbox_from_scale(lat, lon, scale)
+    
+    job = q.enqueue_call(
+        func=puller_wrappers.pull,
+        args=(bbox,),
+        kwargs=specs,
+        timeout=3600)
+    
+    return _pulling_msg(bbox.bounds, **specs)
 
 @app.route('/pull-by-id')
-async def pull_by_id():
+def pull_by_id():
     """Pull an image for a known catalogID."""
     notes = ('(All arguments but the last are required; ' + 
              'if the provider is Planet then item_type is also required.)')
@@ -138,12 +131,21 @@ async def pull_by_id():
         return '{}<br>{}<br>'.format(repr(e), msg)
     if not scale:
         return 'Scale (in km) is required.<br>{}'.format(msg)
-    
-    bbox = grabber_handlers.geobox.bbox_from_scale(lat, lon, scale)
-    grabber = grabber_handlers.GrabberHandler(providers=[provider],
-                                              N_images=1)
-    record = await grabber.pull_by_id(provider, bbox, catalogID, item_type)
-    return json.dumps(record)
+
+    specs = {'providers':[provider], 'N_images':1}
+    bbox = geobox.bbox_from_scale(lat, lon, scale)
+
+    job = q.enqueue_call(
+        func=puller_wrappers.pull_by_id,
+        args=(bbox, catalogID, item_type),
+        kwargs=specs,
+        timeout=3600)
+
+    specs.update({
+        'catalogID': catalogID,
+        'item_type': item_type
+    })
+    return _pulling_msg(bbox.bounds, **specs)
     
 @app.route('/retrieve-story')
 def retrieve_story():
@@ -159,7 +161,7 @@ def retrieve_story():
     return json.dumps({story.idx: story.record})
 
 @app.route('/pull-for-story')
-async def pull_for_story():
+def pull_for_story():
     """Pull images for a story in the WTL database."""
     
     msg = _help_msg(request.base_url,
@@ -170,36 +172,31 @@ async def pull_for_story():
     except ValueError as e:
         return '{}<br>{}<br>'.format(repr(e), msg)
 
-    grabber = grabber_handlers.StoryHandler(N_images=N_images)
-    records = await grabber.pull_for_story(story)
+    job = q.enqueue_call(
+        func=puller_wrappers.pull_for_story,
+        args=(story,),
+        kwargs={'N_images': N_images},
+        timeout=3600)
 
-    return json.dumps(records)
-
-# WIP: Bug in Quart 0.5.0 breaks type handling in request.args.get()
-# As of 5/22/18, bug is fixed, but 0.5.0 PyPI release is from 4/14.
-# Clean parsing routines after bug fix is propagated in new release.
+    return _pulling_msg(story.idx, N_images=N_images)
 
 def _parse_geoloc(args):
     """Parse url arguments for requests based on lat, lon."""
 
     provider = _parse_provider(args)
     
-    lat = args.get('lat')#, type=float)
-    lon = args.get('lon')#, type=float)
+    lat = args.get('lat', type=float)
+    lon = args.get('lon', type=float)
     if not lat or not lon:
-        raise ValueError('Lat, lon are required.')
-    else: # to clean
-        lat, lon = float(lat), float(lon)  
-    scale = args.get('scale')#, type=float)
-    if scale:   # to clean
-        scale = float(scale)
+        raise ValueError('Lat, lon are required.') 
+    scale = args.get('scale', type=float)
 
     specs = {
         'startDate': args.get('start'),
         'endDate': args.get('end'),
-        'clouds': int(args.get('clouds', default=10)),# type=int),
-        'N_images': int(args.get('N', default=3)),#, type=int)
-        'min_intersect': float(args.get('min_intersect', default=.9))
+        'clouds': args.get('clouds', default=10, type=int),
+        'N_images': args.get('N', default=3, type=int),
+        'min_intersect': args.get('min_intersect', default=.9, type=float)
     }
         
     return provider, lat, lon, scale, specs
@@ -244,6 +241,14 @@ def _parse_provider(args):
     
 def _help_msg(url_base, url_args, notes):
     return '<br>Usage: {}?{}<br>{}'.format(url_base, url_args, notes)
+
+def _pulling_msg(target, **specs):
+    msg = '<br>Pulling for: {}<br><br>'.format(target)
+    msg += 'Specs: {}<br><br>'.format(specs)
+    msg += ('On completion images will be uploaded to Google cloud ' +
+        'storage, with links posted stdout. This ' +
+        'could take up to one hour. Try:<br><br>$ heroku logs --tail')
+    return msg
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0')

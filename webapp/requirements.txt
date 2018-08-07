@@ -11,4 +11,7 @@ gbdxtools
 google-cloud-storage
 planet
 scikit-image
+Flask
+redis
+rq
 

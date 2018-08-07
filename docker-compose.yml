@@ -2,16 +2,20 @@ version: '2'
 services:
   web:
     build: .
+    env_file: .env
+    links:
+      - redis
     ports:
       - "5000:5000"
-    environment:
-      - GOOGLE_APPLICATION_CREDENTIALS=/opt/webapp/.google_config.json
-      - PL_API_KEY=1eefae7ddde24c5d8322dc62ba5c6c3a
-      - GBDX_USERNAME=ekboyda@gmail.com
-      - GBDX_PASSWORD=vrok8sd2K
-      - GBDX_CLIENT_ID=IZqbUp;;uH750OY4oWI2..gdsLftkwuQRc6u7Sh_
-      - GBDX_SECRET=P6jb8VLQd@Wvv?Cljw1bP95Wq;3SyEBf6k65TUnvLXEdi8m3s=e4TR:ty9p7XembGBNNMScn_R4lW0tdKb;m;gZARhujM7d:l@lDxLN5-Aae1IZUEH5HZwiT93R9sQzG
     volumes:
       - ./webapp:/opt/webapp
     tty: true
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+  worker:
+    image: image_service_web:latest
+    env_file: .env
+    command: python3 worker.py
 
