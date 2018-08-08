@@ -1,4 +1,9 @@
-"""A Flask web app to search and pull satellite imagery."""
+"""A Flask web app to search and pull satellite imagery.
+
+Image search and story record retrieval are handled by the web app directly;
+image pulling is pushed to a Redis queue and handled by the worker process
+in worker.py.
+"""
 
 import os
 import sys

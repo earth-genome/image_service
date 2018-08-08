@@ -16,4 +16,5 @@ RUN pip install -r /tmp/requirements.txt
 ADD ./webapp /opt/webapp/
 WORKDIR /opt/webapp
 
+# To deploy locally
 CMD python3 app.py
