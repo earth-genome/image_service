@@ -246,8 +246,9 @@ def _pulling_msg(target, **specs):
     msg = '<br>Pulling for: {}<br><br>'.format(target)
     msg += 'Specs: {}<br><br>'.format(specs)
     msg += ('On completion images will be uploaded to Google cloud ' +
-        'storage, with links posted to stdout. This ' +
-        'could take up to one hour. Try:<br><br>$ heroku logs --tail')
+        'storage, with links posted to stdout. Depending on the size of ' +
+        'scene requested, this could take from a few minutes to one hour. ' +
+        ' Try:<br><br>$ heroku logs --tail -a earthrise-imagery')
     return msg
 
 if __name__ == '__main__':
