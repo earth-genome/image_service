@@ -1,0 +1,2 @@
+FROM image_service_worker:latest
+CMD python3 worker.py
