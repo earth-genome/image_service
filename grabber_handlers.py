@@ -250,6 +250,7 @@ class GrabberHandler(object):
             record.update({'urls': urls})
         except Exception:
             self.logger.exception('Pulling for ID {}\n'.format(catalogID))
+            record = {}
             
         return record
 
