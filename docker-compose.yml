@@ -4,16 +4,21 @@ services:
     build: .
     env_file: .env
     links:
-      - redis
+      - redis_worker
+      - redis_db
     ports:
       - "5000:5000"
     volumes:
       - ./webapp:/opt/webapp
     tty: true
-  redis:
+  redis_worker:
     image: redis:alpine
     ports:
       - "6379:6379"
+  redis_db:
+    image: redis:alpine
+    ports:
+      - "6380:6379"
   worker:
     image: image_service_web:latest
     env_file: .env
