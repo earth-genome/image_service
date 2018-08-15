@@ -78,7 +78,7 @@ def search_id():
     msg = _help_msg(
         request.base_url,
         ('provider=planet&id=1425880_1056820_2018-05-14_0f18' +
-        '&item_type=PSScene3Band'),
+        '&item_type=PSOrthoTile'),
         notes)
 
     try: 
