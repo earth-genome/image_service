@@ -51,6 +51,7 @@ import sys
 import dateutil
 import matplotlib.pyplot as plt
 import numpy as np
+from PIL import Image
 from planet import api
 from shapely import geometry
 from shapely.ops import cascaded_union
@@ -66,7 +67,7 @@ with open(DEFAULT_SPECS_FILE, 'r') as f:
     DEFAULT_SPECS = json.load(f)
 
 # For asynchronous handling of scene activation and download, in seconds:
-WAITTIME = 15
+WAITTIME = 10
 
 class PlanetGrabber(object):
     
@@ -162,14 +163,15 @@ class PlanetGrabber(object):
         """Grab and write image for a known catalogID."""
         specs = self.specs.copy()
         specs.update(**grab_specs)
-        
+
+        scene = [self.search_id(catalogID, item_type)]
         active_assets = await self.retrieve_assets(catalogID, item_type)
         if not active_assets:
             raise Exception('Catolog entry for id {} not returned.'.format(
                 catalogID))
 
         staged_assets = self._download_for_scene([active_assets], file_header)
-        written = self._reprocess(bbox, staged_assets, [record], **specs)
+        written = self._reprocess(bbox, staged_assets, scene, **specs)
         
         return written
     
@@ -464,6 +466,45 @@ class PlanetGrabber(object):
         
         return filtered
 
+class ThumbnailGrabber(PlanetGrabber):
+    """PlanetGrabber descendant. Grab methods return thumbnails in lieu of full
+    images.
+
+    Descendant attribute:
+        max_dims: tuple of max output thumbnail dimensions in pixels
+            (PIL.Image will preserve aspect ratio within these bounds.)
+    """
+
+    def __init__(self, max_dims=(512, 512), **specs):
+        super().__init__(**specs)
+        self.max_dims = max_dims
+
+    async def grab_scene(self, bbox, scene, file_header, **grab_specs):
+        """Grab for scene and convert to thumbnails."""
+        written = await super().grab_scene(bbox, scene,
+                                           file_header, **grab_specs)
+        for path in written['paths']:
+            self._convert_to_thumbnail(path)
+        return written
+
+    async def grab_by_id(self, bbox, catalogID, item_type, file_header='',
+                         **grab_specs):
+        """Grab and write thumbnail for a known catalogID."""
+        written = await super().grab_by_id(bbox, catalogID, item_type,
+                                           file_header, **grab_specs)
+        for path in written['paths']:
+            self._convert_to_thumbnail(path)
+        return written
+
+    def _convert_to_thumbnail(self, path):
+        """Convert image to thumbnail. Overwrites input image."""
+        try: 
+            img = Image.open(path)
+        except OSError:
+            return
+        img.thumbnail(self.max_dims)
+        img.save(path)
+        return
     
 # geometric utilities
 
@@ -490,7 +531,7 @@ def _get_footprint(records):
     """Find the union of geometries in records."""
     footprints = [geometry.asShape(rec['geometry']) for rec in records]
     return cascaded_union(footprints)
- 
+    
 
 # Planet-specific formatting functions
 
