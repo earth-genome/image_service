@@ -22,8 +22,7 @@ Ex: python grab_by_id_bbox.py 1040010034CDD100 151.269378, -33.898346, 151.28645
 """
 import numpy as np
 import argparse
-import skimage
-import matplotlib.pyplot as plt
+import skimage.io
 from gbdxtools import CatalogImage
 
 def grab_rgb(catalog_id, bbox, pansharpen=True, acomp=False):
@@ -70,5 +69,5 @@ if __name__ == '__main__':
         pansharpen=args.pansharpen,
         acomp=args.acomp
     )
-    plt.imsave(outfile + '.png', rgb)
+    skimage.io.imsave(outfile + '.png', rgb)
    

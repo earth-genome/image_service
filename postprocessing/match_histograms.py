@@ -13,27 +13,13 @@ matching in other color spaces as does rio hist.
 import argparse
 import sys
 
-import matplotlib.pyplot as plt
 import numpy as np
-import tifffile
+import skimage.io
 
 sys.path.append('rio-hist/')
 from rio_hist import match
 
 IMAGE_EXTS = ('tif', 'jpg', 'png')
-
-def load_img(filename, ext):
-    """Load an image from given filename.
-
-    Argument ext is one of IMAGE_EXTS.
-
-    Returns: an ndarray
-    """
-    if ext == '.tif':
-        img = tifffile.imread(filename)
-    else:
-        img = plt.imread(filename)
-    return img
 
 def parse_filename(filename):
     """Extract a prefix and extension from filename."""
@@ -62,8 +48,8 @@ if __name__ == '__main__':
     src_prefix, src_ext = parse_filename(args['src_filename'])
     _, ref_ext = parse_filename(args['ref_filename'])
     
-    src = load_img(args['src_filename'], src_ext)
-    ref = load_img(args['ref_filename'], ref_ext)
+    src = skimage.io.imread(args['src_filename'])
+    ref = skimage.io.imread(args['ref_filename'])
     if src.dtype != ref.dtype:
         sys.exit('Dtypes {}, {} do not match.'.format(src.dtype, ref.dtype))
 
@@ -71,9 +57,6 @@ if __name__ == '__main__':
     for band in range(3):
         matched.T[band] = match.histogram_match(src.T[band], ref.T[band])
 
-    if src_ext == '.tif':
-        tifffile.imsave(src_prefix+'-matched.'+src_ext, matched)
-    else:
-        plt.imsave(src_prefix+'-matched.'+src_ext, matched)
+    skimage.io.imsave(src_prefix+'-matched.'+src_ext, matched)
         
 

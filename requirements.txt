@@ -1,9 +1,8 @@
 numpy
 shapely
-matplotlib
 tifffile
 requests
-gbdxtools==0.14.10
-google-cloud-storage==1.8.0
-planet==1.1.0
-scikit-image==0.13.1
+gbdxtools
+google-cloud-storage
+planet
+scikit-image
