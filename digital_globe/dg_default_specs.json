@@ -3,6 +3,7 @@
     "min_intersect": 0.9,
     "startDate": "2008-09-01T00:00:00.0000Z",
     "endDate": null,
+    "N_images": 1,
     "offNadirAngle": null,
     "band_type": "MS",
     "pansharpen": null,
@@ -19,5 +20,6 @@
 	"contrast",
 	"dra",
 	"desert"
-    ]
+    ],
+    "thumbnails": false
 }

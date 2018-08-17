@@ -28,7 +28,12 @@ as of writing, takes form:
     "offNadirAngle": null,   # (relation, angle), e.g. ('<', 10)
     "startDate": "2008-09-01T00:00:00.0000Z",  # for catalog search
     "endDate": null,  # for catalog search
+    "N_images": 1,
+    "offNadirAngle": null,
     "band_type": "MS",  # mulit-spectral
+    "pansharpen": null,
+    "pansharp_scale": 2.5,  # in km; used by _check_highres(), which sets
+        pansharpen=True below this scale if pansharpen is None
     "acomp": false,
     "proj": null, # can be any EPSG, e.g. "EPSG:4326"
     "min_intersect": 0.9,  # min fractional overlap between bbox and scene
@@ -37,10 +42,14 @@ as of writing, takes form:
 	    "WORLDVIEW03_VNIR",
 	    "GEOEYE01"
     ],
-    "pansharpen": null,
-    "pansharp_scale": 2.5  # in km; used by _check_highres(), which sets
-        pansharpen=True below this scale if pansharpen is None
-    "write_styles": []
+    "proj": null,
+    "write_styles": [
+        "matte",
+        "contrast",
+        "dra",
+        "desert"
+    ],
+    "thumbnails": false
 }
             
 The parameter image_source is from
@@ -70,21 +79,19 @@ import os
 import sys
 
 import dateutil
-import matplotlib.pyplot as plt
 import numpy as np
 from shapely import wkt
-import tifffile
+import skimage.io
 import gbdxtools  # bug in geo libraries.  import this *after* shapely
 
 from geobox import geobox
 from geobox import projections
 from postprocessing import color
+from postprocessing import resample
 
-# Default catalog and image parameters:
+# Default file for catalog and image parameters:
 DEFAULT_SPECS_FILE = os.path.join(os.path.dirname(__file__),
                                   'dg_default_specs.json')
-with open(DEFAULT_SPECS_FILE, 'r') as f:
-    DEFAULT_SPECS = json.load(f)
 
 class DGImageGrabber(object):
     
@@ -109,8 +116,9 @@ class DGImageGrabber(object):
         write_img:  Write a dask image to file.
     """
 
-    def __init__(self, **specs):
-        self.specs = DEFAULT_SPECS.copy()
+    def __init__(self, specs_filename=DEFAULT_SPECS_FILE, **specs):
+        with open(specs_filename, 'r') as f:
+            self.specs = json.load(f)
         self.specs.update(specs)
         self._search_filters = _build_search_filters(**self.specs)
         self._catalog = gbdxtools.catalog.Catalog()
@@ -121,7 +129,6 @@ class DGImageGrabber(object):
         recs_written = loop.run_until_complete(asyncio.ensure_future(
             self.grab(bbox, file_header=file_header, **grab_specs)))
         return recs_written
-
 
     async def grab(self, bbox, file_header='', **grab_specs):
         """Grab the most recent available images consistent with specs.
@@ -286,6 +293,8 @@ class DGImageGrabber(object):
             daskimg.geotiff(path=path, bands=[2,1,0], **specs)
         elif bands == 8:
             daskimg.geotiff(path=path, bands=[4,2,1], **specs)
+        if self.specs['thumbnails']:
+            resample.make_thumbnail(path)
         output_paths.append(path)
 
         def correct_and_write(img, path, style):
@@ -293,10 +302,10 @@ class DGImageGrabber(object):
             corrected = color.STYLES[style](img)
             outpath = path.split('.tif')[0] + '-' + style + '.png'
             print('\nStaging at {}\n'.format(outpath), flush=True)
-            plt.imsave(outpath, corrected)
+            skimage.io.imsave(outpath, corrected)
             return outpath
         
-        img = color.coarse_adjust(tifffile.imread(path))
+        img = color.coarse_adjust(skimage.io.imread(path))
         for style in styles:
             if style in color.STYLES.keys():
                 output_paths.append(correct_and_write(img, path, style))
@@ -338,7 +347,7 @@ def write_dg_dra(daskimg, file_prefix):
     rgb = daskimg.rgb()
     filename = file_prefix + 'DGDRA.png'
     print('\nSaving to {}\n'.format(filename))
-    plt.imsave(filename, rgb)
+    skimage.io.imsave(filename, rgb)
     return filename
 
 # DG-specific formatting functions

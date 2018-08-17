@@ -22,13 +22,14 @@ as of writing, takes form:
     "min_intersect": 0.9,
     "startDate": "2008-09-01T00:00:00.0000Z",    # for catalog search
     "endDate": null,
+    "N_images": 1,
     "item_types": [
 	    "PSScene3Band",
 	    "PSOrthoTile",
 	    "REOrthoTile",
 	    "SkySatScene"
     ],
-    "asset_types": [    # We prefer assets in this (reverse) order:
+    "asset_types": [   
 	    "analytic",
 	    "ortho_visual",
 	    "visual"
@@ -38,7 +39,8 @@ as of writing, takes form:
 	    "contrast",
 	    "dra",
 	    "desert"
-    ]
+    ],
+    "thumbnails": false
 }
 
 """
@@ -49,22 +51,19 @@ import os
 import sys
 
 import dateutil
-import matplotlib.pyplot as plt
 import numpy as np
-from PIL import Image
 from planet import api
 from shapely import geometry
 from shapely.ops import cascaded_union
-import tifffile
+import skimage.io
 
 from postprocessing import color
 from postprocessing import gdal_routines
+from postprocessing import resample
 
-# Default catalog and image parameters:
+# Default file for catalog and image parameters:
 DEFAULT_SPECS_FILE = os.path.join(os.path.dirname(__file__),
                                   'planet_default_specs.json')
-with open(DEFAULT_SPECS_FILE, 'r') as f:
-    DEFAULT_SPECS = json.load(f)
 
 # For asynchronous handling of scene activation and download, in seconds:
 WAITTIME = 10
@@ -94,8 +93,9 @@ class PlanetGrabber(object):
         color_process: Correct color (producing mutliple versions of the image).
     """
 
-    def __init__(self, **specs):
-        self.specs = DEFAULT_SPECS.copy()
+    def __init__(self, specs_filename=DEFAULT_SPECS_FILE, **specs):
+        with open(specs_filename, 'r') as f:
+            self.specs = json.load(f)
         self.specs.update(specs)
         self._search_filters = _build_search_filters(**self.specs)
         self._client = api.ClientV1()
@@ -296,10 +296,12 @@ class PlanetGrabber(object):
 
         for asset_type in set([k for sa in staged_assets for k in sa.keys()]):
             output_bands = _get_bandmap(item_type, asset_type)
-            paths = [sa[asset_type] for sa in staged_assets] 
+            paths = [sa[asset_type] for sa in staged_assets]
             merged_path = self.geo_process(
                 footprint, paths,
                 source_epsg_codes, target_epsg_code, output_bands)
+            if self.specs['thumbnails']:
+                resample.make_thumbnail(merged_path)
             output_paths = self.color_process(merged_path, asset_type, **specs)
             scene_record['paths'] += output_paths
         return scene_record
@@ -352,16 +354,16 @@ class PlanetGrabber(object):
             corrected = color.STYLES[style](img)
             outpath = path.split('.tif')[0] + '-' + style + '.png'
             print('\nStaging at {}\n'.format(outpath), flush=True)
-            plt.imsave(outpath, corrected)
+            skimage.io.imsave(outpath, corrected)
             return outpath
             
-        img = tifffile.imread(path)
+        img = skimage.io.imread(path)
         if (asset_type == 'visual' or asset_type == 'ortho_visual'):
 
             # add this minimal tweak, since Planet visual is already corrected:
             output_paths.append(correct_and_write(img, path, 'expanded'))
 
-        else: 
+        else:
             for style in styles:
                 if style in color.STYLES.keys():
                     output_paths.append(correct_and_write(img, path, style))
@@ -465,46 +467,7 @@ class PlanetGrabber(object):
                 pass
         
         return filtered
-
-class ThumbnailGrabber(PlanetGrabber):
-    """PlanetGrabber descendant. Grab methods return thumbnails in lieu of full
-    images.
-
-    Descendant attribute:
-        max_dims: tuple of max output thumbnail dimensions in pixels
-            (PIL.Image will preserve aspect ratio within these bounds.)
-    """
-
-    def __init__(self, max_dims=(512, 512), **specs):
-        super().__init__(**specs)
-        self.max_dims = max_dims
-
-    async def grab_scene(self, bbox, scene, file_header, **grab_specs):
-        """Grab for scene and convert to thumbnails."""
-        written = await super().grab_scene(bbox, scene,
-                                           file_header, **grab_specs)
-        for path in written['paths']:
-            self._convert_to_thumbnail(path)
-        return written
-
-    async def grab_by_id(self, bbox, catalogID, item_type, file_header='',
-                         **grab_specs):
-        """Grab and write thumbnail for a known catalogID."""
-        written = await super().grab_by_id(bbox, catalogID, item_type,
-                                           file_header, **grab_specs)
-        for path in written['paths']:
-            self._convert_to_thumbnail(path)
-        return written
-
-    def _convert_to_thumbnail(self, path):
-        """Convert image to thumbnail. Overwrites input image."""
-        try: 
-            img = Image.open(path)
-        except OSError:
-            return
-        img.thumbnail(self.max_dims)
-        img.save(path)
-        return
+    
     
 # geometric utilities
 
