@@ -1,7 +1,7 @@
 
 import sys
 
-import matplotlib.pyplot as plt
+import skimage.io
 
 import color
 
@@ -11,9 +11,9 @@ if __name__ == '__main__':
     except KeyError:
         print('Usage: python reduce_planet_visual.py image.tif')
         sys.exit(0)
-    img = plt.imread(img_file)
+    img = skimage.io.imread(img_file)
     cc = color.ColorCorrect()
     corrected = cc.correct(img)
     prefix = img_file.split('-')[0]
     suffix = img_file.split('.')[-1]
-    plt.imsave(prefix+'-cc.'+suffix, corrected)
+    skimage.io.imsave(prefix+'-cc.'+suffix, corrected)

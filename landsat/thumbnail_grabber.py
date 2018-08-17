@@ -15,8 +15,8 @@ import io
 import json
 import os
 
-import matplotlib.pyplot as plt
 import requests
+import skimage.io
 
 import cloud_storage
 from postprocessing import color
@@ -117,9 +117,9 @@ class ThumbnailGrabber(object):
         img_url = json.loads(res.text)['url']
         res = requests.get(img_url)
         if self.postprocessor:
-            img = plt.imread(io.BytesIO(res.content))
+            img = skimage.io.imread(io.BytesIO(res.content))
             corrected = self.postprocessor(img)
-            plt.imsave(path, corrected)
+            skimage.io.imsave(path, corrected)
         else:
             with open(path, 'wb') as f:
                 f.write(res.content)

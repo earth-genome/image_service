@@ -55,13 +55,12 @@ happens before histogram expansion, in particular, the image can be effectively 
 Given the above, the percentiles should be fixed (except for special off-label use cases, cf. dra below). The tuneable parameters are the cut_frac and gamma.  Some reasonable examples are given in STYLES below.  For the same numerical variation from these values, cut_frac has a larger impact on contrast than gamma. Larger cut_frac means higher contrast, and typically should be set off with higher gamma (decreasing the gamma effect), and vice-versa.   
 
 """
-import numpy as np
 import sys
 
-import matplotlib.pyplot as plt
+import numpy as np
 import skimage
+import skimage.io
 from skimage import exposure
-import tifffile
 
 
 # For ColorCorrect class, a method decorator to return uint8 images,
@@ -262,7 +261,7 @@ if __name__ == '__main__':
                  'DigitalGlobe GeoTiffs.  The flag must follow the filename.')
     try:
         filename = sys.argv[1]
-        img = tifffile.imread(sys.argv[1])
+        img = skimage.io.imread(sys.argv[1])
     except (IndexError, FileNotFoundError) as e:
         sys.exit('{}\n{}'.format(repr(e), usage_msg))
     if '-c' in sys.argv:
@@ -270,5 +269,5 @@ if __name__ == '__main__':
     for style, operator in STYLES.items():
     #for style, operator in {'desert': STYLES['desert']}.items():
         corrected = operator(img)
-        plt.imsave(filename.split('.')[0] + style + '.png', corrected)
+        skimage.io.imsave(filename.split('.')[0] + style + '.png', corrected)
 
