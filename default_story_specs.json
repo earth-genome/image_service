@@ -10,6 +10,7 @@
         "dra",
         "desert"
     ],
+    "thumbnails": false,
     "bbox_rescaling": 2,
     "min_size": {
         "digital_globe": 0.5,
