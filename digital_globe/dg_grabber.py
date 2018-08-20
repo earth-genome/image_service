@@ -293,8 +293,6 @@ class DGImageGrabber(object):
             daskimg.geotiff(path=path, bands=[2,1,0], **specs)
         elif bands == 8:
             daskimg.geotiff(path=path, bands=[4,2,1], **specs)
-        if self.specs['thumbnails']:
-            resample.make_thumbnail(path)
         output_paths.append(path)
 
         def correct_and_write(img, path, style):
@@ -306,6 +304,15 @@ class DGImageGrabber(object):
             return outpath
         
         img = color.coarse_adjust(skimage.io.imread(path))
+        
+        # PIL.Image can't handle DG TIFs. Writing and reloading is an
+        # awkward workaround. This will allow thumbnails while replacing
+        # the original TIF with the coarse-corrected version.
+        if self.specs['thumbnails']:
+            skimage.io.imsave(path, img)
+            resample.make_thumbnail(path)
+            img = skimage.io.imread(path)
+            
         for style in styles:
             if style in color.STYLES.keys():
                 output_paths.append(correct_and_write(img, path, style))
