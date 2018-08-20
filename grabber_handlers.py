@@ -106,8 +106,7 @@ from grab_imagery.planet_labs import planet_grabber
 
 PROVIDER_CLASSES = {
     'digital_globe': dg_grabber.DGImageGrabber,
-    'planet': planet_grabber.PlanetGrabber,
-    'planet_thumbnails': planet_graber.ThumbnailGrabber
+    'planet': planet_grabber.PlanetGrabber
 }
 
 # For staging, en route to bucket
@@ -153,7 +152,7 @@ class GrabberHandler(object):
 
     Attributes:
         provider_classes: dict with class instantiators for pulling images,
-            from modules in this repo
+            from modules in this repo; default PROVIDER_CLASSES above
         staging_dir: directory for local staging of images
         bucket_tool: class instance to access Google Cloud storage bucket
         logger: a Python logging.getLogger instance
@@ -162,7 +161,7 @@ class GrabberHandler(object):
     
     def __init__(self,
                  bucket_name=DEFAULT_BUCKET,
-                 providers=['digital_globe', 'planet'],
+                 providers=PROVIDER_CLASSES.keys(),
                  staging_dir=STAGING_DIR,
                  log_dest=sys.stderr,
                  specs_filename=os.path.join(os.path.dirname(__file__),
