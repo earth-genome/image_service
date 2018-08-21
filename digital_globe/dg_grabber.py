@@ -263,7 +263,7 @@ class DGImageGrabber(object):
         prefix = _build_filename(bbox, record, file_header)
         paths = self.write_img(daskimg, prefix, **specs)
         if self.specs['thumbnails']:
-            paths = self.thumbnail_process(paths)
+            paths = resample.make_thumbnails(paths)
         cleaned = _clean_record(record)
         cleaned.update({'paths': paths})
         return cleaned
@@ -295,7 +295,6 @@ class DGImageGrabber(object):
             daskimg.geotiff(path=path, bands=[2,1,0], **specs)
         elif bands == 8:
             daskimg.geotiff(path=path, bands=[4,2,1], **specs)
-        output_paths.append(path)
 
         def correct_and_write(img, path, style):
             """Correct color and write to file."""
@@ -309,22 +308,11 @@ class DGImageGrabber(object):
         for style in styles:
             if style in color.STYLES.keys():
                 output_paths.append(correct_and_write(img, path, style))
-    
-        return output_paths
 
-    def thumbnail_process(self, paths):
-        """Convert images to thumbnails.
-
-        Returns: List of paths to images successfully converted.
-            (If conversion fails for path, associated file is deleted.)
-        """
-        output_paths = []
-        for path in paths:
-            try:
-                resample.make_thumbnail(path)
-                output_paths.append(path)
-            except OSError:
-                os.remove(path)
+        if self.specs['thumbnails']:
+            os.remove(path):
+        else:
+            output_paths.append(path)
         return output_paths
     
     # Functions to enforce certain specs.

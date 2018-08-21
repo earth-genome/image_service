@@ -4,7 +4,7 @@ import numpy as np
 from PIL import Image
 import skimage.io
 
-def make_thumbnail(path, max_dims=(512,512)):
+def make_thumbnails(paths, max_dims=(512,512)):
     """Convert image to thumbnail.
 
     Arguments:
@@ -14,11 +14,12 @@ def make_thumbnail(path, max_dims=(512,512)):
 
     Returns: None. (Overwrites input image on success.)
     """
-    try: 
-        img = Image.open(path)
-    except OSError:
-        raise
-    img.thumbnail(max_dims)
-    img = np.asarray(img)     # force the resampling now
-    skimage.io.imsave(path, img)
-    return
+    for path in paths:
+        try: 
+            img = Image.open(path)
+        except OSError:
+            pass
+        img.thumbnail(max_dims)
+        img = np.asarray(img)     # force the resampling now
+        skimage.io.imsave(path, img)
+        return
