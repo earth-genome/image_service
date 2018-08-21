@@ -17,6 +17,7 @@ from rq import Queue
 from grab_imagery import firebaseio
 from grab_imagery.geobox import geobox
 from grab_imagery.grabber_handlers import PROVIDER_CLASSES
+from grab_imagery.postprocessing import color
 import puller_wrappers
 import worker
 
@@ -56,22 +57,27 @@ def help():
 def search():
     """Search image availability for give lat, lon."""
 
-    notes = ('Provider, lat, lon are required.')
+    notes = ('Provider, lat, lon, N (number of records) are required.')
     msg = _help_msg(request.base_url, EXAMPLE_ARGS, notes)
 
     try:
-        provider, lat, lon, _, specs = _parse_geoloc(request.args)
+        provider = _parse_provider(request.args)
+        lat, lon, _ = _parse_geoloc(request.args)
+        specs = _parse_specs(request.args)
     except ValueError as e:
         msg['Exception'] = repr(e)
         return json.dumps(msg)
+    try:
+        N_records = specs['N_images']
+    except KeyError:
+        return json.dumps(msg)
 
     grabber = PROVIDER_CLASSES[provider](**specs)
-    records = grabber.search_latlon_clean(
-        lat, lon, N_records=specs['N_images'])
+    records = grabber.search_latlon_clean(lat, lon, N_records=N_records)
     return json.dumps(records)
 
-@app.route('/search-id')
-def search_id():
+@app.route('/search-by-id')
+def search_by_id():
     """Retrieve catalog record for input catalogID."""
     notes = ('Provider and id are required; ' +
              'for Planet the associated item_type also is required.')
@@ -101,25 +107,27 @@ def pull():
         EXAMPLE_ARGS + '&scale=3.0&min_intersect=.9', notes)
 
     try:
-        provider, lat, lon, scale, specs = _parse_geoloc(request.args)
+        provider = _parse_provider(request.args)
+        lat, lon, scale = _parse_geoloc(request.args)
+        specs = _parse_specs(request.args)
     except ValueError as e:
         msg['Exception'] = repr(e)
         return json.dumps(msg)
     if not scale:
         return json.dumps(msg)
-
-    specs.update({'providers': [provider]})
+    
     bbox = geobox.bbox_from_scale(lat, lon, scale)
+    kwargs = dict({'providers': [provider]}, **specs)
     db_key = datetime.now().strftime('%Y%m%d%H%M%S%f')
     puller_wrappers.connection.set(db_key, 'In progress.')
     
     job = q.enqueue_call(
         func=puller_wrappers.pull,
         args=(db_key, bbox),
-        kwargs=specs,
+        kwargs=kwargs,
         timeout=3600)
 
-    guide = _pulling_guide(request.url_root, db_key, bbox.bounds, **specs)
+    guide = _pulling_guide(request.url_root, db_key, bbox.bounds, **kwargs)
     return json.dumps(guide)
 
 @app.route('/pull-by-id')
@@ -134,30 +142,31 @@ def pull_by_id():
         notes)
 
     try:
-        _, lat, lon, scale, _ = _parse_geoloc(request.args)
         provider, catalogID, item_type = _parse_catalog_keys(request.args)
+        lat, lon, scale = _parse_geoloc(request.args)
+        specs = _parse_specs(request.args)
     except ValueError as e:
         msg['Exception'] = repr(e)
         return json.dumps(msg)
     if not scale:
         return json.dumps(msg)
 
-    specs = {'providers':[provider], 'N_images':1}
     bbox = geobox.bbox_from_scale(lat, lon, scale)
+    kwargs = dict({'providers': [provider]}, **specs)
     db_key = datetime.now().strftime('%Y%m%d%H%M%S%f')
     puller_wrappers.connection.set(db_key, 'In progress.')
     
     job = q.enqueue_call(
         func=puller_wrappers.pull_by_id,
         args=(db_key, bbox, catalogID, item_type),
-        kwargs=specs,
+        kwargs=kwargs,
         timeout=3600)
 
-    specs.update({
+    kwargs.update({
         'catalogID': catalogID,
         'item_type': item_type
     })
-    guide = _pulling_guide(request.url_root, db_key, bbox.bounds, **specs)
+    guide = _pulling_guide(request.url_root, db_key, bbox.bounds, **kwargs)
     return json.dumps(guide)
     
 @app.route('/retrieve-story')
@@ -167,7 +176,7 @@ def retrieve_story():
     msg = _help_msg(request.base_url,
                     'idx=Index of the story in the database', '')
     try:
-        story, _  = _parse_index(request.args)
+        story  = _parse_index(request.args)
     except ValueError as e:
         msg['Exception'] = repr(e)
         return json.dumps(msg)
@@ -182,7 +191,8 @@ def pull_for_story():
                     'idx=Index of the story in the database&N=3', '')
 
     try:
-        story, N_images  = _parse_index(request.args)
+        story = _parse_index(request.args)
+        specs = _parse_specs(request.args)
     except ValueError as e:
         msg['Exception'] = repr(e)
         return json.dumps(msg)
@@ -193,11 +203,10 @@ def pull_for_story():
     job = q.enqueue_call(
         func=puller_wrappers.pull_for_story,
         args=(db_key, story),
-        kwargs={'N_images': N_images},
+        kwargs=specs,
         timeout=7200)
 
-    guide = _pulling_guide(request.url_root, db_key, story.idx,
-                           N_images=N_images)
+    guide = _pulling_guide(request.url_root, db_key, story.idx, **specs)
     return json.dumps(guide)
 
 @app.route('/links')
@@ -213,39 +222,63 @@ def get_links():
         return json.dumps(msg)
 
     return puller_wrappers.connection.get(key)
-    #return worker.connection.get(key).decode('utf-8')
-    
-def _parse_geoloc(args):
-    """Parse url arguments for requests based on lat, lon."""
 
-    provider = _parse_provider(args)
-    
+# Argument parsing functions
+
+def _parse_provider(args):
+    """Parse url arguments for provider."""
+    provider = args.get('provider')
+    if not provider or provider not in PROVIDER_CLASSES.keys():
+        raise ValueError('A provider is required. Supported providers ' +
+                         'are {}'.format(list(PROVIDER_CLASSES.keys())))
+    return provider
+
+def _parse_geoloc(args):
+    """Parse url arguments for lat, lon, scale."""
     lat = args.get('lat', type=float)
     lon = args.get('lon', type=float)
     if not lat or not lon:
         raise ValueError('Lat, lon are required.') 
     scale = args.get('scale', type=float)
 
+    return lat, lon, scale
+
+def _parse_specs(args):
+    """Parse url arguments for image pulling specs."""
+    # For Planet imagery only:
+    KNOWN_ASSET_TYPES = ['analytic', 'ortho_visual', 'visual']
+    
     specs = {
         'startDate': args.get('start'),
         'endDate': args.get('end'),
-        'clouds': args.get('clouds', default=10, type=int),
-        'N_images': args.get('N', default=3, type=int),
-        'min_intersect': args.get('min_intersect', default=.9, type=float)
+        'clouds': args.get('clouds', type=int),
+        'N_images': args.get('N', type=int),
+        'min_intersect': args.get('min_intersect', type=float),
+    # The following are special-purpose and excluded from help messaging:
+        'pansharp_scale': args.get('pansharp_scale', type=float),
+        'asset_types': args.getlist('asset_types'),
+        'write_styles': args.getlist('write_styles'),
+        'bucket_name': args.get('bucket_name'),
+        'thumbnails': args.get('thumbnails', type=bool)
     }
-        
-    return provider, lat, lon, scale, specs
+    if not set(specs['asset_types']) <= set(KNOWN_ASSET_TYPES):
+        raise ValueError('Supported asset_types are {} '.format(
+            KNOWN_ASSET_TYPES) + '(applicable to Planet only)')
+    if not set(specs['write_styles']) <= set(color.STYLES.keys()):
+        raise ValueError('Supported write_styles are {}'.format(
+            list(color.STYLES.keys())))
+    specs = {k:v for k,v in specs.items() if v}
+    return specs
 
 def _parse_index(args):
-    """Parse url arguments for requests based on story index
+    """Parse url arguments for story index.
 
-    Returns: The DBItem story and N_images.
+    Returns: The DBItem story.
     """
     STORY_SEEDS = firebaseio.DB(firebaseio.FIREBASE_URL)
     DB_CATEGORY = '/WTL'
 
     idx = args.get('idx')
-    N_images = int(args.get('N', default=3))
     if not idx:
         raise ValueError('A story index is required.')
     
@@ -254,10 +287,10 @@ def _parse_index(args):
         raise ValueError('Story not found.')
     
     story = firebaseio.DBItem(DB_CATEGORY, idx, record)
-    return story, N_images
+    return story
 
 def _parse_catalog_keys(args):
-    """Parse catalogID and item_type"""
+    """Parse provider, catalogID, and item_type"""
     provider = _parse_provider(args)
     catalogID = args.get('id')
     item_type = args.get('item_type')
@@ -267,14 +300,8 @@ def _parse_catalog_keys(args):
         raise ValueError('For Planet an item_type is required.')
     return provider, catalogID, item_type
 
-def _parse_provider(args):
-    """Parse provider from url arguments."""
-    provider = args.get('provider')
-    if not provider or provider not in PROVIDER_CLASSES.keys():
-        raise ValueError('A provider is required. Supported providers ' +
-                         'are {}'.format(list(PROVIDER_CLASSES.keys())))
-    return provider
-        
+# Help messaging
+
 def _help_msg(base_url, url_args, notes):
     msg = {
         'Usage': '{}?{}'.format(base_url, url_args),

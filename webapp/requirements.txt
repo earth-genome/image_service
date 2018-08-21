@@ -5,12 +5,11 @@ python-firebase
 numpy
 rasterio
 shapely
-matplotlib
+scikit-image
 tifffile
 gbdxtools
 google-cloud-storage
 planet
-scikit-image
 Flask
 redis
 rq
