@@ -119,7 +119,7 @@ def pull():
     bbox = geobox.bbox_from_scale(lat, lon, scale)
     kwargs = dict({'providers': [provider]}, **specs)
     db_key = datetime.now().strftime('%Y%m%d%H%M%S%f')
-    puller_wrappers.connection.set(db_key, 'In progress.')
+    puller_wrappers.connection.set(db_key, json.dumps('In progress.'))
     
     job = q.enqueue_call(
         func=puller_wrappers.pull,
@@ -154,7 +154,7 @@ def pull_by_id():
     bbox = geobox.bbox_from_scale(lat, lon, scale)
     kwargs = dict({'providers': [provider]}, **specs)
     db_key = datetime.now().strftime('%Y%m%d%H%M%S%f')
-    puller_wrappers.connection.set(db_key, 'In progress.')
+    puller_wrappers.connection.set(db_key, json.dumps('In progress.'))
     
     job = q.enqueue_call(
         func=puller_wrappers.pull_by_id,
@@ -198,7 +198,7 @@ def pull_for_story():
         return json.dumps(msg)
 
     db_key = datetime.now().strftime('%Y%m%d%H%M%S%f')
-    puller_wrappers.connection.set(db_key, 'In progress.')
+    puller_wrappers.connection.set(db_key, json.dumps('In progress.'))
 
     job = q.enqueue_call(
         func=puller_wrappers.pull_for_story,
@@ -318,7 +318,7 @@ def _pulling_guide(url_root, db_key, target, **specs):
         'Specs': specs,
         'Hope': hope,
         'Follow': '$ heroku logs --tail -a earthrise-imagery',
-        'Links to uploaded images': '{}links?key={}'.format(url_root, db_key)
+        'Links': '{}links?key={}'.format(url_root, db_key)
     }
     return guide
 
