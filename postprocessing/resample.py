@@ -22,4 +22,4 @@ def make_thumbnails(paths, max_dims=(512,512)):
         img.thumbnail(max_dims)
         img = np.asarray(img)     # force the resampling now
         skimage.io.imsave(path, img)
-        return
+    return
