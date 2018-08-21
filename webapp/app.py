@@ -11,6 +11,7 @@ import os
 import sys
 
 from flask import Flask, request
+from flask_restful import inputs
 import numpy as np
 from rq import Queue
 
@@ -21,7 +22,8 @@ from grab_imagery.postprocessing import color
 import puller_wrappers
 import worker
 
-q = Queue(connection=worker.connection)
+q = Queue('default', connection=worker.connection)
+tnq = Queue('thumbnails', connection=worker.connection)
 app = Flask(__name__)
 
 # for help messaging
@@ -115,17 +117,24 @@ def pull():
         return json.dumps(msg)
     if not scale:
         return json.dumps(msg)
-    
+
     bbox = geobox.bbox_from_scale(lat, lon, scale)
     kwargs = dict({'providers': [provider]}, **specs)
     db_key = datetime.now().strftime('%Y%m%d%H%M%S%f')
     puller_wrappers.connection.set(db_key, json.dumps('In progress.'))
-    
-    job = q.enqueue_call(
-        func=puller_wrappers.pull,
-        args=(db_key, bbox),
-        kwargs=kwargs,
-        timeout=3600)
+
+    if 'thumbnails' in specs.keys() and specs['thumbnails']:
+        job = tnq.enqueue_call(
+            func=puller_wrappers.pull,
+            args=(db_key, bbox),
+            kwargs=kwargs,
+            timeout=3600)
+    else:
+        job = q.enqueue_call(
+            func=puller_wrappers.pull,
+            args=(db_key, bbox),
+            kwargs=kwargs,
+            timeout=3600)
 
     guide = _pulling_guide(request.url_root, db_key, bbox.bounds, **kwargs)
     return json.dumps(guide)
@@ -259,7 +268,7 @@ def _parse_specs(args):
         'asset_types': args.getlist('asset_types'),
         'write_styles': args.getlist('write_styles'),
         'bucket_name': args.get('bucket_name'),
-        'thumbnails': args.get('thumbnails', type=bool)
+        'thumbnails': args.get('thumbnails', type=inputs.boolean)
     }
     if not set(specs['asset_types']) <= set(KNOWN_ASSET_TYPES):
         raise ValueError('Supported asset_types are {} '.format(
@@ -267,7 +276,7 @@ def _parse_specs(args):
     if not set(specs['write_styles']) <= set(color.STYLES.keys()):
         raise ValueError('Supported write_styles are {}'.format(
             list(color.STYLES.keys())))
-    specs = {k:v for k,v in specs.items() if v}
+    specs = {k:v for k,v in specs.items() if v is not None and v != []}
     return specs
 
 def _parse_index(args):

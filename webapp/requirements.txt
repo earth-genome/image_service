@@ -11,6 +11,7 @@ gbdxtools
 google-cloud-storage
 planet
 Flask
+flask_restful
 redis
 rq
 

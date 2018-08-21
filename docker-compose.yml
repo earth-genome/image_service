@@ -23,4 +23,7 @@ services:
     image: image_service_web:latest
     env_file: .env
     command: python3 worker.py
-
+  thumbnailworker:
+    image: image_service_web:latest
+    env_file: .env
+    command: python3 thumbnailworker.py
