@@ -263,7 +263,7 @@ class DGImageGrabber(object):
         prefix = _build_filename(bbox, record, file_header)
         paths = self.write_img(daskimg, prefix, **specs)
         if self.specs['thumbnails']:
-            paths = resample.make_thumbnails(paths)
+            resample.make_thumbnails(paths)
         cleaned = _clean_record(record)
         cleaned.update({'paths': paths})
         return cleaned
