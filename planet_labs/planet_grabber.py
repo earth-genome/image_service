@@ -300,12 +300,12 @@ class PlanetGrabber(object):
             merged_path = self.geo_process(
                 footprint, paths,
                 source_epsg_codes, target_epsg_code, output_bands)
-            if self.specs['thumbnails']:
-                resample.make_thumbnail(merged_path)
             output_paths = self.color_process(merged_path, asset_type, **specs)
+            if self.specs['thumbnails']:
+                output_paths = self.thumbnail_process(output_paths)
             scene_record['paths'] += output_paths
         return scene_record
-
+                
     def geo_process(self, footprint, paths, source_epsg_codes, target_epsg_code,
                     output_bands):
         """Reproject, crop to footprint, extract output bands, merge.
@@ -368,6 +368,21 @@ class PlanetGrabber(object):
                 if style in color.STYLES.keys():
                     output_paths.append(correct_and_write(img, path, style))
 
+        return output_paths
+
+    def thumbnail_process(self, paths):
+        """Convert images to thumbnails.
+
+        Returns: List of paths to images successfully converted.
+            (If conversion fails for path, associated file is deleted.)
+        """
+        output_paths = []
+        for path in paths:
+            try:
+                resample.make_thumbnail(path)
+                output_paths.append(path)
+            except OSError:
+                os.remove(path)
         return output_paths
 
     # Functions for grouping records returned by search into

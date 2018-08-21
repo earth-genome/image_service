@@ -262,6 +262,8 @@ class DGImageGrabber(object):
         """
         prefix = _build_filename(bbox, record, file_header)
         paths = self.write_img(daskimg, prefix, **specs)
+        if self.specs['thumbnails']:
+            paths = self.thumbnail_process(paths)
         cleaned = _clean_record(record)
         cleaned.update({'paths': paths})
         return cleaned
@@ -304,21 +306,27 @@ class DGImageGrabber(object):
             return outpath
         
         img = color.coarse_adjust(skimage.io.imread(path))
-        
-        # PIL.Image can't handle DG TIFs. Writing and reloading is an
-        # awkward workaround. This will allow thumbnails while replacing
-        # the original TIF with the coarse-corrected version.
-        if self.specs['thumbnails']:
-            skimage.io.imsave(path, img)
-            resample.make_thumbnail(path)
-            img = skimage.io.imread(path)
-            
         for style in styles:
             if style in color.STYLES.keys():
                 output_paths.append(correct_and_write(img, path, style))
     
         return output_paths
 
+    def thumbnail_process(self, paths):
+        """Convert images to thumbnails.
+
+        Returns: List of paths to images successfully converted.
+            (If conversion fails for path, associated file is deleted.)
+        """
+        output_paths = []
+        for path in paths:
+            try:
+                resample.make_thumbnail(path)
+                output_paths.append(path)
+            except OSError:
+                os.remove(path)
+        return output_paths
+    
     # Functions to enforce certain specs.
 
     def _patch_null_specs(self, bbox):
