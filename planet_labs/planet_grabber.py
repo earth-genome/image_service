@@ -369,7 +369,7 @@ class PlanetGrabber(object):
                     output_paths.append(correct_and_write(img, path, style))
 
         if self.specs['thumbnails']:
-            os.remove(path):
+            os.remove(path)
         else:
             output_paths.append(path)
         return output_paths
