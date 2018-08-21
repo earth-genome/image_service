@@ -302,7 +302,7 @@ class PlanetGrabber(object):
                 source_epsg_codes, target_epsg_code, output_bands)
             output_paths = self.color_process(merged_path, asset_type, **specs)
             if self.specs['thumbnails']:
-                output_paths = self.thumbnail_process(output_paths)
+                resample.make_thumbnails(output_paths)
             scene_record['paths'] += output_paths
         return scene_record
                 
@@ -346,7 +346,7 @@ class PlanetGrabber(object):
 
         Returns:  Updated record with paths to color-corrected images.
         """
-        output_paths = [path]
+        output_paths = []
         styles = [style.lower() for style in write_styles]
 
         def correct_and_write(img, path, style):
@@ -368,21 +368,10 @@ class PlanetGrabber(object):
                 if style in color.STYLES.keys():
                     output_paths.append(correct_and_write(img, path, style))
 
-        return output_paths
-
-    def thumbnail_process(self, paths):
-        """Convert images to thumbnails.
-
-        Returns: List of paths to images successfully converted.
-            (If conversion fails for path, associated file is deleted.)
-        """
-        output_paths = []
-        for path in paths:
-            try:
-                resample.make_thumbnail(path)
-                output_paths.append(path)
-            except OSError:
-                os.remove(path)
+        if self.specs['thumbnails']:
+            os.remove(path):
+        else:
+            output_paths.append(path)
         return output_paths
 
     # Functions for grouping records returned by search into
