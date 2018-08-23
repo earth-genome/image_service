@@ -3,9 +3,11 @@ web app and upload to Google cloud storage.
 
 Class ThumbnailGrabber:  Pull Landsat thumbnails from a web app and upload to cloud storage.
 
-Usage with default parameters:
+The routine is currently asynchronous only to conform with other thumbnail
+grabbing options.  Nonetheless it must be scheduled in an event loop. Usage:
+> loop = asycnio.get_event_loop()
 > grabber = ThumbnailGrabber()
-> grabber.source_and_post(lat, lon)
+> loop.run_until_complete(grabber(lat, lon))
 
 """
 
@@ -60,7 +62,7 @@ class ThumbnailGrabber(object):
         self.bucket_tool = bucket_tool
         self.logger = logger
         
-    def __call__(self, lat, lon, N_images=4, params=CATALOG_PARAMS):
+    async def __call__(self, lat, lon, N_images=4, params=CATALOG_PARAMS):
         """Pull thumbnails and post to cloud storage
 
         Arguments:
