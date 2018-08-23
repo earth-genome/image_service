@@ -60,8 +60,7 @@ class ThumbnailGrabber(object):
         self.bucket_tool = bucket_tool
         self.logger = logger
         
-    def source_and_post(self, lat, lon, N_images=4,
-                        params=CATALOG_PARAMS):
+    def __call__(self, lat, lon, N_images=4, params=CATALOG_PARAMS):
         """Pull thumbnails and post to cloud storage
 
         Arguments:
