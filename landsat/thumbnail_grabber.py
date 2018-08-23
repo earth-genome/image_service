@@ -1,16 +1,19 @@
 """Routines to grab Landsat thumbnails from the earthrise-assets
 web app and upload to Google cloud storage.
 
-Class ThumbnailGrabber:  Pull Landsat thumbnails from a web app and upload to cloud storage.
+Class ThumbnailGrabber:  Pull Landsat thumbnails from a web app and upload to
+cloud storage.
 
-The routine is currently asynchronous only to conform with other thumbnail
-grabbing options.  Nonetheless it must be scheduled in an event loop. Usage:
+The routine handles incoming http requests asynchronously, mostly to conform
+with story_seeds/thumbnails/request_thumbnails.py.  It must be
+scheduled in an event loop and passed an aiohttp.ClientSession().
+A convenience wrapper to do this is main():
 > loop = asycnio.get_event_loop()
-> grabber = ThumbnailGrabber()
-> loop.run_until_complete(grabber(lat, lon))
+> loop.run_until_complete(main(lat, lon))
 
 """
 
+import aiohttp
 from datetime import date
 from datetime import timedelta
 import io
@@ -62,10 +65,12 @@ class ThumbnailGrabber(object):
         self.bucket_tool = bucket_tool
         self.logger = logger
         
-    async def __call__(self, lat, lon, N_images=4, params=CATALOG_PARAMS):
+    async def __call__(self, session, lat, lon, N_images=4,
+                       params=CATALOG_PARAMS):
         """Pull thumbnails and post to cloud storage
 
         Arguments:
+            session: aiohttp.ClientSession() instance
             lat/lon: float latitude and longitude
             N_images: Number of images to pull, in time increments
                 specified by params['days']
@@ -89,7 +94,7 @@ class ThumbnailGrabber(object):
                 'end': endDate.isoformat()
             })
             try: 
-                img_path = self._save_image(payload)
+                img_path = await self._save_image(session, payload)
                 url = self.bucket_tool.upload_blob(img_path,
                                          os.path.split(img_path)[1])
                 thumbnail_urls.append(url)
@@ -102,7 +107,7 @@ class ThumbnailGrabber(object):
                     self.logger.exception(e)
         return thumbnail_urls
 
-    def _save_image(self, payload):
+    async def _save_image(self, session, payload):
         """Pull image from web app, postprocess, and save to staging_dir.
 
         Arguments:
@@ -112,16 +117,25 @@ class ThumbnailGrabber(object):
         """
         filename = ''.join(k+v for k,v in payload.items()) + '.png'
         path = os.path.join(self.staging_dir, filename)
-        res = requests.get(self.base_url,
-                           params=payload,
-                           allow_redirects=True)
-        img_url = json.loads(res.text)['url']
-        res = requests.get(img_url)
+        async with session.get(self.base_url,
+                         params=payload,
+                         allow_redirects=True) as response:
+            img_data = await response.json(content_type=None)
+            img_url = img_data['url']
+        async with session.get(img_url) as img_response:
+            bin_img = await img_response.read()
         if self.postprocessor:
-            img = skimage.io.imread(io.BytesIO(res.content))
+            img = skimage.io.imread(io.BytesIO(bin_img))
             corrected = self.postprocessor(img)
             skimage.io.imsave(path, corrected)
         else:
             with open(path, 'wb') as f:
-                f.write(res.content)
+                f.write(bin_img)
         return path
+
+# Session handling wrapper. To call within an asyncio event loop.
+async def main(lat, lon):
+    async with aiohttp.ClientSession() as session:
+        grabber = ThumbnailGrabber()
+        thumbnail_urls = await grabber(session, lat, lon)
+        return thumbnail_urls
