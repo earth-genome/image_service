@@ -31,6 +31,15 @@ EXAMPLE_ARGS = ('provider=digital_globe' +
                 '&lat=36.2553&lon=-112.6980' +
                 '&start=2017-01-01&end=2018-01-01&clouds=10&N=1')
 
+# For Planet imagery:
+KNOWN_ASSET_TYPES = ['analytic', 'ortho_visual', 'visual']
+KNOWN_ITEM_TYPES = ['PSScene3Band', 'PSOrthoTile', 'REOrthoTile',
+                    'SkySatScene']
+
+# For Digital Globe:
+KNOWN_IMAGE_SOURCES = ['WORLDVIEW02', 'WORLDVIEW03_VNIR', 'GEOEYE01',
+                      'QUICKBIRD02', 'IKONOS']
+
 @app.route('/')
 def help():
     welcome = ('This web app provides functionality from the following ' + 
@@ -41,7 +50,7 @@ def help():
         'Search for available images based on lat, lon':
             ''.join((request.url, 'search?')),
         'Retrieve record for a known catalog ID':
-            ''.join((request.url, 'search-id?')),
+            ''.join((request.url, 'search-by-id?')),
         'Pull images based on lat, lon, and scale':
             ''.join((request.url, 'pull?')),
         'Pull image for a known catalogID':
@@ -128,7 +137,7 @@ def pull():
             func=puller_wrappers.pull,
             args=(db_key, bbox),
             kwargs=kwargs,
-            timeout=3600)
+            timeout=600)
     else:
         job = q.enqueue_call(
             func=puller_wrappers.pull,
@@ -146,8 +155,8 @@ def pull_by_id():
              'if the provider is Planet then item_type is also required.')
     msg = _help_msg(
         request.base_url,
-        (EXAMPLE_ARGS.split('&start')[0] +
-         '&scale=3.0&id=103001006B8F9000&item_type=visual'),
+        ('provider=planet&id=1425880_1056820_2018-05-14_0f18' +
+        '&lat=-121.529&lon=38.455&scale=4.0&item_type=PSOrthoTile'),
         notes)
 
     try:
@@ -253,10 +262,7 @@ def _parse_geoloc(args):
     return lat, lon, scale
 
 def _parse_specs(args):
-    """Parse url arguments for image pulling specs."""
-    # For Planet imagery only:
-    KNOWN_ASSET_TYPES = ['analytic', 'ortho_visual', 'visual']
-    
+    """Parse url arguments for image pulling specs."""  
     specs = {
         'startDate': args.get('start'),
         'endDate': args.get('end'),
@@ -265,7 +271,9 @@ def _parse_specs(args):
         'min_intersect': args.get('min_intersect', type=float),
     # The following are special-purpose and excluded from help messaging:
         'pansharp_scale': args.get('pansharp_scale', type=float),
+        'item_types': args.getlist('item_types'),
         'asset_types': args.getlist('asset_types'),
+        'image_source': args.getlist('image_sources'),
         'write_styles': args.getlist('write_styles'),
         'bucket_name': args.get('bucket_name'),
         'thumbnails': args.get('thumbnails', type=inputs.boolean)
@@ -273,6 +281,12 @@ def _parse_specs(args):
     if not set(specs['asset_types']) <= set(KNOWN_ASSET_TYPES):
         raise ValueError('Supported asset_types are {} '.format(
             KNOWN_ASSET_TYPES) + '(applicable to Planet only)')
+    if not set(specs['item_types']) <= set(KNOWN_ITEM_TYPES):
+        raise ValueError('Supported item_types are {} '.format(
+            KNOWN_ITEM_TYPES) + '(applicable to Planet only)')
+    if not set(specs['image_source']) <= set(KNOWN_IMAGE_SOURCES):
+        raise ValueError('Supported image_sources are {} '.format(
+            KNOWN_IMAGE_SOURCES) + '(applicable to DG only)')
     if not set(specs['write_styles']) <= set(color.STYLES.keys()):
         raise ValueError('Supported write_styles are {}'.format(
             list(color.STYLES.keys())))
@@ -307,6 +321,9 @@ def _parse_catalog_keys(args):
         raise ValueError('Catalog id is required.')
     if provider == 'planet' and not item_type:
         raise ValueError('For Planet an item_type is required.')
+    if item_type and item_type not in KNOWN_ITEM_TYPES:
+        raise ValueError('Supported item_types are {} '.format(
+            KNOWN_ITEM_TYPES) + '(applicable to Planet only)')
     return provider, catalogID, item_type
 
 # Help messaging
