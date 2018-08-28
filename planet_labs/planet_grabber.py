@@ -175,7 +175,7 @@ class PlanetGrabber(object):
         
         return written
     
-    def search(self, bbox, MAX_RECORDS=2500):
+    def search(self, bbox, max_records=500):
         """Search the catalog for relevant imagery."""
         aoi = geometry.mapping(bbox)
         query = api.filters.and_filter(
@@ -183,7 +183,7 @@ class PlanetGrabber(object):
         request = api.filters.build_search_request(query,
             item_types=self.specs['item_types'])
         response = self._client.quick_search(request, sort='acquired desc')
-        return list(response.items_iter(limit=MAX_RECORDS))
+        return list(response.items_iter(limit=max_records))
 
     def search_latlon(self, lat, lon):
         """Search the catalog for relevant imagery."""
