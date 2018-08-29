@@ -29,6 +29,7 @@ as of writing, takes form:
     "startDate": "2008-09-01T00:00:00.0000Z",  # for catalog search
     "endDate": null,  # for catalog search
     "N_images": 1,
+    "skip_days": 0, # min days between scenes if N_images > 1
     "offNadirAngle": null,
     "band_type": "MS",  # mulit-spectral
     "pansharpen": null,
@@ -53,7 +54,7 @@ as of writing, takes form:
 }
             
 The parameter image_source is from
-['WORLDVIEW02, 'WORLDVIEW03_VNIR', 'GEOEYE01', QUICKBIRD02', 'IKONOS'].
+['WORLDVIEW02', 'WORLDVIEW03_VNIR', 'GEOEYE01', 'QUICKBIRD02', 'IKONOS'].
 The first three are are fairly comparable in resolution
 (.3-.5 meters/pixel if pansharpened) and are currently active.
 The latter two have resolution roughly half that and we decomissioned in 2015.
@@ -249,6 +250,9 @@ class DGImageGrabber(object):
                 daskimgs.append(daskimg.aoi(bbox=intersection.bounds))
                 recs_retrieved.append(record)
                 print('Retrieved ID {}'.format(catalogID))
+                if self.specs['skip_days']:
+                    date = dateutil.parser.parse(props['timestamp']).date()
+                    self._fastforward(records, date)
             except Exception as e:
                 print('Exception: {}'.format(e))
         print('Found {} images of {} requested.'.format(
@@ -314,6 +318,27 @@ class DGImageGrabber(object):
         else:
             output_paths.append(path)
         return output_paths
+
+    def _fastforward(self, records, date):
+        """Pop records until all are older than date by specs['skip_days']
+
+        Arguments:
+            records: Image records sorted by date
+            date: Reference date to work back from
+
+        Output: Records are popped from input variable records.
+
+        Returns: None
+        """
+        target_date = date - datetime.timedelta(days=self.specs['skip_days'])
+        while records:
+            record = records.pop()
+            date_aq = dateutil.parser.parse(
+                record['properties']['timestamp']).date()
+            if date_aq <= target_date:
+                records.append(record) # replace this record
+                break
+        return 
     
     # Functions to enforce certain specs.
 
