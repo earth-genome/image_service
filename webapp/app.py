@@ -22,8 +22,8 @@ from grab_imagery.postprocessing import color
 import puller_wrappers
 import worker
 
-q = Queue('default', connection=worker.connection)
-tnq = Queue('thumbnails', connection=worker.connection)
+q = Queue('default', connection=worker.connection, default_timeout=3600)
+tnq = Queue('thumbnails', connection=worker.connection, default_timeout=900)
 app = Flask(__name__)
 
 # for help messaging
@@ -136,14 +136,20 @@ def pull():
         job = tnq.enqueue_call(
             func=puller_wrappers.pull,
             args=(db_key, bbox),
-            kwargs=kwargs,
-            timeout=900)
+            kwargs=kwargs)
+        try:
+            print('As dict: {}'.format(job['args']))
+        except:
+            pass
+        try:
+            print('As attribute: {}'.format(job.args))
+        except:
+            pass
     else:
         job = q.enqueue_call(
             func=puller_wrappers.pull,
             args=(db_key, bbox),
-            kwargs=kwargs,
-            timeout=3600)
+            kwargs=kwargs)
 
     guide = _pulling_guide(request.url_root, db_key, bbox.bounds, **kwargs)
     return json.dumps(guide)
@@ -177,8 +183,7 @@ def pull_by_id():
     job = q.enqueue_call(
         func=puller_wrappers.pull_by_id,
         args=(db_key, bbox, catalogID, item_type),
-        kwargs=kwargs,
-        timeout=3600)
+        kwargs=kwargs)
 
     kwargs.update({
         'catalogID': catalogID,

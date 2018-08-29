@@ -2,6 +2,9 @@ import os
 
 import redis
 from rq import Worker, Queue, Connection
+from rq.handlers import move_to_failed_queue
+
+from exception_handler import post_to_db
 
 listen = ['thumbnails']
 
@@ -12,5 +15,7 @@ connection = redis.from_url(redis_url)
 
 if __name__ == '__main__':
     with Connection(connection):
-        worker = Worker(map(Queue, listen))
+        worker = Worker(
+            map(Queue, listen),
+            exception_handlers=[post_to_db, move_to_failed_queue])
         worker.work()
