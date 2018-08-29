@@ -137,7 +137,7 @@ def pull():
             func=puller_wrappers.pull,
             args=(db_key, bbox),
             kwargs=kwargs,
-            timeout=600)
+            timeout=900)
     else:
         job = q.enqueue_call(
             func=puller_wrappers.pull,
@@ -270,6 +270,7 @@ def _parse_specs(args):
         'N_images': args.get('N', type=int),
         'min_intersect': args.get('min_intersect', type=float),
     # The following are special-purpose and excluded from help messaging:
+        'skip_days': args.get('skip', type=int),
         'pansharp_scale': args.get('pansharp_scale', type=float),
         'item_types': args.getlist('item_types'),
         'asset_types': args.getlist('asset_types'),
