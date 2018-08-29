@@ -23,6 +23,7 @@ as of writing, takes form:
     "startDate": "2008-09-01T00:00:00.0000Z",    # for catalog search
     "endDate": null,
     "N_images": 1,
+    "skip_days": 0, # min days between scenes if N_images > 1
     "item_types": [
 	    "PSScene3Band",
 	    "PSOrthoTile",
@@ -46,6 +47,7 @@ as of writing, takes form:
 """
 
 import asyncio
+import datetime
 import json
 import os
 import sys
@@ -183,12 +185,18 @@ class PlanetGrabber(object):
         request = api.filters.build_search_request(query,
             item_types=self.specs['item_types'])
         response = self._client.quick_search(request, sort='acquired desc')
+
+        # The final iteration over response items is time expensive, ergo
+        # max_records.  However, if 'skip_days' is large we will need as many
+        # records as possible to fulfill a pull request.
+        if self.specs['skip_days']:
+            max_records = None
         return list(response.items_iter(limit=max_records))
 
-    def search_latlon(self, lat, lon):
+    def search_latlon(self, lat, lon, max_records=500):
         """Search the catalog for relevant imagery."""
         point = geometry.Point(lon, lat)
-        return self.search(point)
+        return self.search(point, max_records=max_records)
 
     def search_id(self, catalogID, item_type):
         """Retrieve catalog record for input catalogID."""
@@ -200,16 +208,16 @@ class PlanetGrabber(object):
 
         Returns: streamlined records, as defined in _clean_records()
         """
-        records = self.search(bbox)
-        return [_clean_record(r) for r in records[:N_records]]
+        records = self.search(bbox, max_records=N_records)
+        return [_clean_record(r) for r in records]
 
     def search_latlon_clean(self, lat, lon, N_records=10):
         """Search the catalog for relevant imagery.
 
         Returns: streamlined records, as defined in _clean_records()
         """
-        records = self.search_latlon(lat, lon)
-        return [_clean_record(r) for r in records[:N_records]]
+        records = self.search_latlon(lat, lon, max_records=N_records)
+        return [_clean_record(r) for r in records]
 
     async def _retrieve_for_scene(self, scene):
         """Schedule asset retrieval for records in scene.
@@ -385,12 +393,15 @@ class PlanetGrabber(object):
         scenes = []
         records = json.loads(json.dumps(records))
         while records and len(scenes) < specs['N_images']:
-            groups = self._pop_day(records)
+            date, groups = self._pop_day(records)
             groups = self._filter_by_overlap(bbox, groups)
             groups = self._filter_copies(groups)
             group_records = [v['records'] for v in groups.values()]
             while group_records and len(scenes) < specs['N_images']:
                 scenes.append(group_records.pop())
+                if self.specs['skip_days']:
+                    self._fastforward(records, date)
+                    break
         return scenes
 
     def _pop_day(self, records):
@@ -400,7 +411,7 @@ class PlanetGrabber(object):
 
         Output:  The day's records are popped from input variable records.
 
-        Returns: A dict of groups of records for the day
+        Returns: The date and a dict of groups of records for the day
         """
         record = records.pop()
         item_type = record['properties']['item_type']
@@ -423,7 +434,7 @@ class PlanetGrabber(object):
                 records.append(record)  # replace the next day's record 
                 break
 
-        return groups
+        return date, groups
     
     def _filter_by_overlap(self, bbox, groups):
         """Enforce min_intersect criteria on groups of records.
@@ -471,7 +482,28 @@ class PlanetGrabber(object):
                 pass
         
         return filtered
-    
+
+    def _fastforward(self, records, date):
+        """Pop records until all are older than date by specs['skip_days']
+
+        Arguments:
+            records: Image records sorted by date
+            date: Reference date to work back from
+
+        Output: Records are popped from input variable records.
+
+        Returns: None
+        """
+        target_date = date - datetime.timedelta(days=self.specs['skip_days'])
+        while records:
+            record = records.pop()
+            date_aq = dateutil.parser.parse(
+                record['properties']['acquired']).date()
+            if date_aq <= target_date:
+                records.append(record) # replace this record
+                break
+        return 
+                
     
 # geometric utilities
 

@@ -4,6 +4,7 @@
     "startDate": "2008-09-01T00:00:00.0000Z",
     "endDate": null,
     "N_images": 1,
+    "skip_days": 0,
     "item_types": [
 	"PSScene3Band",
 	"PSOrthoTile",
