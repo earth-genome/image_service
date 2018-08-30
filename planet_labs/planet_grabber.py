@@ -434,7 +434,7 @@ class PlanetGrabber(object):
                 records.append(record)  # replace the next day's record 
                 break
 
-        return date, groups
+        return date0, groups
     
     def _filter_by_overlap(self, bbox, groups):
         """Enforce min_intersect criteria on groups of records.
