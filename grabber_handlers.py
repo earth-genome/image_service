@@ -435,7 +435,7 @@ class GeoJSONHandler(GrabberHandler):
         with open(features_filename, 'r') as f:
             geojsons = json.load(f)
 
-        for feature in geojsons['Features']:
+        for feature in geojsons['features']:
             if 'properties' not in feature.keys():
                 feature.update({'properties': {}})
             if 'images' not in feature['properties'].keys():
