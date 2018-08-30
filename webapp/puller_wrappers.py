@@ -25,7 +25,6 @@ import redis
 redis_url = os.getenv('REDIS_URL', 'redis://redis_db:6379')
 connection = redis.from_url(redis_url, decode_responses=True)
 
-import worker
 from grab_imagery import grabber_handlers
 
 def pull(db_key, bbox, **specs):
