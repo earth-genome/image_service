@@ -43,11 +43,11 @@ def compute_areas(feature_collection_fname, overwrite=True):
     areas = []
     for feature in geojsons['features']:
         area = compute_area(feature)
-        feature['properties'].update({'area': '{:.3g}'.format(area)})
+        feature['properties'].update({'area': '{:.2g}'.format(area)})
         areas.append(area)
 
     if overwrite:
-        geojsons.update({'Total area': '{:.3g}'.format(np.sum(areas))})
+        geojsons.update({'Total area': '{:.2g}'.format(np.sum(areas))})
         with open(feature_collection_fname, 'w') as f:
             json.dump(geojsons, f, indent=4)
     return areas
@@ -81,4 +81,4 @@ if __name__ == '__main__':
     args = parser.parse_args()
     print(vars(args))
     areas = compute_areas(args.filename, overwrite=args.overwrite)
-    print('Areas: {}\nTotal: {}'.format(areas, np.sum(areas)))
+    print('Areas: {}\nTotal: {:.2g}'.format(areas, np.sum(areas)))
