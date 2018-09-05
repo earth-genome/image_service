@@ -99,7 +99,7 @@ def merge(filenames, srcnodata=0, clean=True):
             os.remove(filename)
     return targetname
 
-# Separate crop and reband routines, now deprecated:
+# Separate crop and reband routines:
  
 def crop(filename, bbox, clean=True):
     """Crop GeoTiff to bounding box.
@@ -140,12 +140,13 @@ def reband(filename, output_bands, clean=True):
 
     Returns: New GeoTiff filename.
     """
-    targetname = filename.split('.tif')[0] + '-RGB.tif'
+    targetname = filename.split('.tif')[0] + '-reband.tif'
     dressed_bands = np.asarray([('-b', str(b)) for b in output_bands])
     commands = [
         'gdal_translate',
         *dressed_bands.flatten(),
         '-co', 'COMPRESS=LZW',
+        '--config', 'GDAL_PAM_ENABLED', 'NO',
         filename, targetname
     ]
     subprocess.call(commands)

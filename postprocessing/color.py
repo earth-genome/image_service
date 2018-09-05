@@ -33,11 +33,13 @@ Additional external function:
     coarse_adjust:  Convert to uint16 and do a rough histogram expansion.
         (Ad hoc to DG to prepare DG geotiffs for ColorCorrect routines.)
 
-Usage from main, for Planet, yielding all possible STYLES.  
-> python color.py planetimg.tif
+Usage from main, for Planet, yielding all possible STYLES
+(must be run from grab_imagery folder for imports):
+
+> python postprocessing/color.py planetimg.tif
 
 Usage from main, for DG (-c flag coarse-corrects and ensures proper dtype)
-> python color.py dgimg.tif -c 
+> python postprocessing/color.py dgimg.tif -c 
         
 Notes:
 
@@ -61,6 +63,8 @@ import numpy as np
 import skimage
 import skimage.io
 from skimage import exposure
+
+from postprocessing import landcover
 
 
 # For ColorCorrect class, a method decorator to return uint8 images,
@@ -255,6 +259,9 @@ STYLES = {
     'expanded': ColorCorrect(cut_frac=.75).linearly_enhance_contrast
 }
 
+# common remote sensing landcover indices (ndvi, ndwi...)
+STYLES.update(landcover.INDICES)
+
 if __name__ == '__main__':
     usage_msg = ('Usage: python color.py image.tif [-c]\n' +
                  'The -c flag indicates a preliminary coarse adjust for ' +
@@ -267,7 +274,6 @@ if __name__ == '__main__':
     if '-c' in sys.argv:
         img = coarse_adjust(img)
     for style, operator in STYLES.items():
-    #for style, operator in {'desert': STYLES['desert']}.items():
         corrected = operator(img)
         skimage.io.imsave(filename.split('.')[0] + style + '.png', corrected)
 

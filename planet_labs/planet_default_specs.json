@@ -19,8 +19,8 @@
     "write_styles": [
         "matte",
 	"contrast",
-	"dra",
 	"desert"
     ],
+    "landcover_indices": [],
     "thumbnails": false
 }

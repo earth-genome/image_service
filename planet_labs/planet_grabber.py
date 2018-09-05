@@ -38,9 +38,9 @@ as of writing, takes form:
     "write_styles": [
         "matte",
 	    "contrast",
-	    "dra",
 	    "desert"
     ],
+    "landcover_indices": [],
     "thumbnails": false
 }
 
@@ -303,19 +303,28 @@ class PlanetGrabber(object):
         scene_record.update({'paths': []})
 
         for asset_type in set([k for sa in staged_assets for k in sa.keys()]):
-            output_bands = _get_bandmap(item_type, asset_type)
+            try: 
+                output_bands = _get_bandmap(item_type, asset_type)
+            except KeyError:
+                break
+            try:
+                nir_band = _get_nir_bandmap(item_type, asset_type)
+            except KeyError:
+                nir_band = []
             paths = [sa[asset_type] for sa in staged_assets]
             merged_path = self.geo_process(
                 footprint, paths,
-                source_epsg_codes, target_epsg_code, output_bands)
-            output_paths = self.color_process(merged_path, asset_type, **specs)
+                source_epsg_codes, target_epsg_code,
+                output_bands, nir_band)
+            output_paths = self.color_process(merged_path, asset_type,
+                                              output_bands, nir_band)
             if self.specs['thumbnails']:
                 resample.make_thumbnails(output_paths)
             scene_record['paths'] += output_paths
         return scene_record
                 
     def geo_process(self, footprint, paths, source_epsg_codes, target_epsg_code,
-                    output_bands):
+                    output_bands, nir_band):
         """Reproject, crop to footprint, extract output bands, merge.
 
         Arguments:
@@ -326,6 +335,7 @@ class PlanetGrabber(object):
             target_epsg_code: integer EPSG code
                 (typically here codes are WGS 84 / UTM zone codes, e.g., 32617)
             output_bands: a list of bands by number (indexed from 1)
+            nir_band: a list with the nir band number (indexed from 1) or []
             
         Returns:  Path to output image.
         """
@@ -340,7 +350,12 @@ class PlanetGrabber(object):
 
         reshaped = []
         for path in reprojected:
-            path = gdal_routines.crop_and_reband(path, footprint, output_bands)
+            if self.specs['landcover_indices'] and nir_band:
+                # in this case crop only; reband during color_process
+                path = gdal_routines.crop(path, footprint)
+            else:
+                path = gdal_routines.crop_and_reband(path, footprint,
+                                                     output_bands)
             reshaped.append(path)
          
         if len(reshaped) > 1:
@@ -349,13 +364,14 @@ class PlanetGrabber(object):
             scene_path = reshaped[0]
         return scene_path
         
-    def color_process(self, path, asset_type, write_styles=[], **specs):
+    def color_process(self, path, asset_type, output_bands, nir_band):
         """Correct color (producing mutliple versions of the image).
 
         Returns:  Updated record with paths to color-corrected images.
         """
         output_paths = []
-        styles = [style.lower() for style in write_styles]
+        styles = [style.lower() for style in self.specs['write_styles']]
+        indices = [index.lower() for index in self.specs['landcover_indices']]
 
         def correct_and_write(img, path, style):
             """Correct color and write to file."""
@@ -365,16 +381,29 @@ class PlanetGrabber(object):
             skimage.io.imsave(outpath, corrected)
             return outpath
             
-        img = skimage.io.imread(path)
         if (asset_type == 'visual' or asset_type == 'ortho_visual'):
 
             # add this minimal tweak, since Planet visual is already corrected:
+            img = skimage.io.imread(path)
             output_paths.append(correct_and_write(img, path, 'expanded'))
 
-        else:
+        elif asset_type == 'analytic':
+            if indices and nir_band:
+                path = gdal_routines.reband(path, output_bands + nir_band)
+                img = skimage.io.imread(path).astype('float32')
+                for index in indices:
+                    try:
+                        output_paths.append(correct_and_write(img, path, index))
+                    except KeyError:
+                        pass
+                path = gdal_routines.reband(path, [1, 2, 3])
+
+            img = skimage.io.imread(path)
             for style in styles:
-                if style in color.STYLES.keys():
+                try:
                     output_paths.append(correct_and_write(img, path, style))
+                except KeyError:
+                    pass
 
         if self.specs['thumbnails']:
             os.remove(path)
@@ -504,7 +533,7 @@ class PlanetGrabber(object):
                 break
         return 
                 
-    
+        
 # geometric utilities
 
 def _sort_by_overlap(bbox, records):
@@ -580,19 +609,22 @@ def _get_bandmap(item_type, asset_type):
     """Find the band order for R-G-B bands."""
     bandmaps = {   
         'PSScene3Band': {
-            'visual': (1, 2, 3),
-            'analytic': (1, 2, 3)
+            'visual': [1, 2, 3],
+            'analytic': [1, 2, 3]
+        },
+        'PSScene4Band': {
+            'analytic': [3, 2, 1]
         },
         'PSOrthoTile': {
-            'visual': (1, 2, 3),
-            'analytic': (3, 2, 1)
+            'visual': [1, 2, 3],
+            'analytic': [3, 2, 1]
         },
         'REOrthoTile': {
-            'visual': (1, 2, 3),
-            'analytic': (3, 2, 1)
+            'visual': [1, 2, 3],
+            'analytic': [3, 2, 1]
         },
         'SkySatScene': {
-            'ortho_visual': (3, 2, 1)
+            'ortho_visual': [3, 2, 1]
         }
     }
     try:
@@ -602,5 +634,24 @@ def _get_bandmap(item_type, asset_type):
             repr(e), item_type, asset_type))
     return bands
 
+def _get_nir_bandmap(item_type, asset_type):
+    """Find the band index for NIR band."""
+    bandmaps = {   
+        'PSScene4Band': {
+            'analytic': [4]
+        },
+        'PSOrthoTile': {
+            'analytic': [4]
+        },
+        'REOrthoTile': {
+            'analytic': [5]
+        }
+    }
+    try:
+        bands = bandmaps[item_type][asset_type]
+    except KeyError as e:
+        raise KeyError('{}: NIR band not defined for {}:{}'.format(
+            repr(e), item_type, asset_type))
+    return bands
 
 

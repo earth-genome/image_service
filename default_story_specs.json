@@ -7,9 +7,9 @@
     "write_styles": [
         "matte",
         "contrast",
-        "dra",
         "desert"
     ],
+    "landcover_indices": []
     "thumbnails": false,
     "bbox_rescaling": 2,
     "min_size": {
