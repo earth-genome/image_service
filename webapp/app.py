@@ -19,6 +19,7 @@ from grab_imagery import firebaseio
 from grab_imagery.geobox import geobox
 from grab_imagery.grabber_handlers import PROVIDER_CLASSES
 from grab_imagery.postprocessing import color
+from grab_imagery.postprocessing import landcover
 import puller_wrappers
 import worker
 
@@ -33,8 +34,8 @@ EXAMPLE_ARGS = ('provider=digital_globe' +
 
 # For Planet imagery:
 KNOWN_ASSET_TYPES = ['analytic', 'ortho_visual', 'visual']
-KNOWN_ITEM_TYPES = ['PSScene3Band', 'PSOrthoTile', 'REOrthoTile',
-                    'SkySatScene']
+KNOWN_ITEM_TYPES = ['PSScene3Band', 'PSScene4Band', 'PSOrthoTile',
+                    'REOrthoTile', 'SkySatScene']
 
 # For Digital Globe:
 KNOWN_IMAGE_SOURCES = ['WORLDVIEW02', 'WORLDVIEW03_VNIR', 'GEOEYE01',
@@ -281,6 +282,7 @@ def _parse_specs(args):
         'asset_types': args.getlist('asset_types'),
         'image_source': args.getlist('image_sources'),
         'write_styles': args.getlist('write_styles'),
+        'landcover_indices': args.getlist('indices'),
         'bucket_name': args.get('bucket_name'),
         'thumbnails': args.get('thumbnails', type=inputs.boolean)
     }
@@ -296,8 +298,18 @@ def _parse_specs(args):
     if not set(specs['write_styles']) <= set(color.STYLES.keys()):
         raise ValueError('Supported write_styles are {}'.format(
             list(color.STYLES.keys())))
+    if not set(specs['landcover_indices']) <= set(landcover.INDICES.keys()):
+        raise ValueError('Supported indices are {}'.format(
+            list(landcover.INDICES.keys())))
+    
+    # override defaults to ensure availability of NIR band in this case:
+    if specs['landcover_indices'] and not specs['item_types']:
+        specs['item_types'] = ['PSScene4Band', 'PSOrthoTile', 'REOrthoTile']
+    
     specs = {k:v for k,v in specs.items() if v is not None and v != []}
     return specs
+
+
 
 def _parse_index(args):
     """Parse url arguments for story index.
