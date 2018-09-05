@@ -11,18 +11,21 @@ import sys
 
 import skimage.io
 
-INDICES = ['ndvi', 'ndwi']
-
 def ndvi(img):
     """Compute ndvi on four-band img."""
-    b, g, r, nir = img.T
+    r, g, b, nir = img.T
     ndvi = (nir - r)/(nir + r)
     return ndvi.T
 
 def ndwi(img):
-    b, g, r, nir = img.T
+    r, g, b, nir = img.T
     ndwi = (g - nir)/(g + nir)
     return ndwi.T
+
+INDICES = {
+    'ndvi': ndvi,
+    'ndwi': ndwi
+}
     
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -31,12 +34,12 @@ if __name__ == '__main__':
     parser.add_argument(
         'filename',
         type=str,
-        help='Filename for a 4-band tif image, bands ordered B-G-R-NIR.'
+        help='Filename for a 4-band tif image, bands ordered R-G-B-NIR.'
     )
     parser.add_argument(
         'index_name',
         type=str,
-        help='Index type from {}'.format(INDICES)
+        help='Index type from {}'.format(list(INDICES.keys()))
     )
     args = parser.parse_args()
     img = skimage.io.imread(args.filename).astype('float32')
@@ -45,7 +48,7 @@ if __name__ == '__main__':
     elif args.index_name.lower() == 'ndwi':
         index = ndwi(img)
     else:
-        sys.exit('Supported indices: {}'.format(('ndvi', 'ndwi')))
+        sys.exit('Supported indices: {}'.format(list(INDICES.keys())))
     outfile = args.filename.split('.tif')[0] + '-' + args.index_name + '.png'
     skimage.io.imsave(outfile, index)
         
