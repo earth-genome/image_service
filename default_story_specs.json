@@ -11,6 +11,7 @@
     ],
     "landcover_indices": []
     "thumbnails": false,
+    "file_header": "",
     "bbox_rescaling": 2,
     "min_size": {
         "digital_globe": 0.5,

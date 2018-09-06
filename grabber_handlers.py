@@ -1,16 +1,16 @@
 """Classes for high-level management of image-grabbing processes.
 
 --- --- 
-WIP:  Originally written to run in a Quart web app, the async routines here
+WIP:  Written to run in a Flask web app, the async routines here
 have no event loops assigned a priori. To run any async method, simply edit
 this code to decorate it with @loop, or at runtime, create a scheduled version
 of the function by passing it through loop() explicitly.
 E.g. to pull for a bbox: 
 
-> g = GrabberHandler(bucket_name, specs_filename='specs.json',
+> g = GrabberHandler(bucket_name=bucket_name, specs_filename='specs.json',
                      **more_image_specs)
-> puller = loop(g.pull)
-> records = puller(bbox, **override_image_specs)
+> looped = loop(g.pull)
+> records = looped(bbox, **override_image_specs)
 
 Running from the interpreter, however, raises some issues with clean
 shutdown on KeyboardInterrupt.  See loop() below.  
@@ -19,7 +19,7 @@ shutdown on KeyboardInterrupt.  See loop() below.
 Usage:
 
 To pull for a GeoJSON FeatureCollection:
-> g = GeoJSONGrabber(bucket_name, specs_filename='specs.json',
+> g = GeoJSONGrabber(bucket_name=bucket_name, specs_filename='specs.json',
                       **more_image_specs)
 > updated_feature_collection = g.pull_for_geojson(features_filename)
 
@@ -27,15 +27,16 @@ To pull for a GeoJSON FeatureCollection:
 initialized.)  
 
 To pull for the news wire:
-> sg = StoryGrabber(WIRE_BUCKET, specs_filename='specs.json', **more_image_specs)
+> sg = StoryGrabber(bucket_name=WIRE_BUCKET, specs_filename='specs.json', **more_image_specs)
 > sg.pull_for_wire()
 
 To pull for a single DBItem story:
-> sg = StoryGrabber(bucket_name, specs_filename='specs.json', **more_image_specs)
+> sg = StoryGrabber(bucket_name=bucket_name, specs_filename='specs.json',
+                    **more_image_specs)
 > records = sg.pull_for_story(story, **override_image_specs)
 
 To pull for a shapely bbox:
-> g = GrabberHandler(bucket_name, specs_filename='specs.json',
+> g = GrabberHandler(bucket_name=bucket_name, specs_filename='specs.json',
                      **more_image_specs)
 > records = g.pull(bbox, **override_image_specs)
 
@@ -50,13 +51,16 @@ As of writing, default_specs.json contains:
     "min_intersect": 0.9,  # min fractional overlap between bbox and scene
     "startDate": "2008-09-06",  # Earliest allowed date for catalog search 
     "endDate": null, # Latest allowed date for catalog search
-    "N_images": 3  # Number of images to pull for each bbox
+    "N_images": 1  # Number of images to pull for each bbox
     "write_styles": [  # Defined in postprocessing.color
         "matte",       
         "contrast",
         "dra",
         "desert"
-    ]
+    ],
+    "landcover_indices": [],
+    "thumbnails": false,
+    "file_header": ""
 }
 
 The default begin-of-epoch startDate is specified somewhat arbitrarily as
@@ -153,10 +157,9 @@ class GrabberHandler(object):
     Attributes:
         provider_classes: dict with class instantiators for pulling images,
             from modules in this repo; default PROVIDER_CLASSES above
-        staging_dir: directory for local staging of images
         bucket_tool: class instance to access Google Cloud storage bucket
         logger: a Python logging.getLogger instance
-        image_specs: dict of catalog search and image size specs
+        image_specs: dict of catalog and image specs
     """
     
     def __init__(self,
@@ -173,11 +176,9 @@ class GrabberHandler(object):
         if not self.provider_classes:
             raise ValueError('Available providers: {}'.format(
                 list(PROVIDER_CLASSES.keys())))
-        
-        self.staging_dir = staging_dir
-        if not os.path.exists(self.staging_dir):
-            os.makedirs(self.staging_dir)
-            
+
+        if not os.path.exists(staging_dir):
+            os.makedirs(staging_dir)
         try: 
             self.bucket_tool = cloud_storage.BucketTool(bucket_name)
         except Exception as e:
@@ -189,13 +190,14 @@ class GrabberHandler(object):
         with open(specs_filename, 'r') as f:
             self.image_specs = json.load(f)
         self.image_specs.update(image_specs)
+        self.image_specs.update({'file_header': os.path.join(staging_dir, '')})
 
     async def pull(self, bbox, **image_specs):
         """Pull images for bbox.
 
         Arguments:
             bbox: a shapely box
-            grab_specs: to override values in self.image_specs
+            image_specs: to override values in self.image_specs
 
         Output:  Images written posted to cloud storage bucket.
 
@@ -213,9 +215,7 @@ class GrabberHandler(object):
 
             grab_tasks += [
                 asyncio.ensure_future(
-                    grabber.grab_scene(
-                        conforming_bbox, scene,
-                        os.path.join(self.staging_dir, '')))
+                    grabber.grab_scene(conforming_bbox, scene))
                 for scene in scenes
             ]
 
@@ -235,17 +235,14 @@ class GrabberHandler(object):
         return recs_written
 
     async def pull_by_id(self, provider, bbox, catalogID, item_type=None,
-                   **image_specs):
+                         **image_specs):
         """Pull image for a given catalogID."""
         specs = self.image_specs.copy()
         specs.update(image_specs)
         
         grabber = self.provider_classes[provider](**specs)
         try: 
-            record = await grabber.grab_by_id(
-                bbox, catalogID, item_type, 
-                file_header=os.path.join(self.staging_dir, ''),
-                **specs)
+            record = await grabber.grab_by_id(bbox, catalogID, item_type)
             urls = self._upload(record.pop('paths'))
             record.update({'urls': urls})
         except Exception:

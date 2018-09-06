@@ -10,5 +10,6 @@
         "desert"
     ],
     "landcover_indices": [],
-    "thumbnails": false
+    "thumbnails": false,
+    "file_header": ""
 }

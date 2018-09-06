@@ -7,20 +7,20 @@
     "skip_days": 0,
     "offNadirAngle": null,
     "band_type": "MS",
-    "pansharpen": null,
     "pansharp_scale": 2.5,
     "acomp": false,
+    "override_proj": null,
     "image_source": [
 	"WORLDVIEW02",
 	"WORLDVIEW03_VNIR",
 	"GEOEYE01"
     ],
-    "proj": null,
     "write_styles": [
         "matte",
 	"contrast",
-	"dra",
 	"desert"
     ],
-    "thumbnails": false
+    "landcover_indices": [],
+    "thumbnails": false,
+    "file_header": ""
 }
