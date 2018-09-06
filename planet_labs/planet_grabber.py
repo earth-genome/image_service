@@ -4,10 +4,10 @@ API ref: https://planetlabs.github.io/planet-client-python/index.html
 
 Class PlanetGrabber: A class to grab an image respecting given specs.
 
-Usage with default specs (default except for N_images):
+Usage with default specs:
 > bbox = geobox.bbox_from_scale(37.77, -122.42, 1.0)
 > g = PlanetGrabber()
-> g(bbox, N_images=3, file_header='SanFrancisco')
+> g(bbox)
 
 Because planet images are relatively small, multiple images often must be
 pulled and assembled to cover a bounding box. The minimal processing unit
@@ -41,7 +41,8 @@ as of writing, takes form:
 	    "desert"
     ],
     "landcover_indices": [],
-    "thumbnails": false
+    "thumbnails": false,
+    file_header: ""
 }
 
 """
@@ -89,43 +90,35 @@ class PlanetGrabber(object):
         search_latlon:  Given lat, lon, search for relevant image records.
         search_latlon_clean:  Search and return streamlined image records.
         search_id: Retrieve catalog record for input catalogID.
-        async retrieve_asset: Activate an asset and add its reference to record.
+        async retrieve_asset: Initiate and monitor asset activation.
         download: Download as asset.
         geo_process: Reproject, crop to bbox, extract output bands, merge.
-        color_process: Correct color (producing mutliple versions of the image).
+        color_process: Correct color, producing mutliple versions of the image.
     """
 
     def __init__(self, specs_filename=DEFAULT_SPECS_FILE, **specs):
         with open(specs_filename, 'r') as f:
             self.specs = json.load(f)
         self.specs.update(specs)
-        self._search_filters = _build_search_filters(**self.specs)
+        self._search_filters = self._build_search_filters()
         self._client = api.ClientV1()
 
-    def __call__(self, bbox, file_header='', **grab_specs):
+    def __call__(self, bbox):
         """Scheduling wrapper for async execution of grab()."""
         loop = asyncio.get_event_loop()
-        recs_written = loop.run_until_complete(asyncio.ensure_future(
-            self.grab(bbox, file_header=file_header, **grab_specs)))
+        recs_written = loop.run_until_complete(self.grab(bbox))
         return recs_written
 
-    async def grab(self, bbox, file_header, **grab_specs):
+    async def grab(self, bbox):
         """Grab the most recent available images consistent with specs.
     
-        Arguments:
-            bbox: a shapely box
-            file_header: optional prefix for output image files
-            grab_specs: to override certain elements of self.specs, possibly:
-                N_images: number of images to retrieve
-                write_styles: list of possible output image styles
-                    (from color.STYLES)
+        Argument: bbox: a shapely box
             
         Returns: List of records of written images
         """
-        scenes = self.prep_scenes(bbox, **grab_specs)
+        scenes = self.prep_scenes(bbox)
         grab_tasks = [
-            asyncio.ensure_future(
-                self.grab_scene(bbox, scene, file_header, **grab_specs))
+            asyncio.ensure_future(self.grab_scene(bbox, scene))
             for scene in scenes
         ]
 
@@ -138,42 +131,35 @@ class PlanetGrabber(object):
                 print('During grab_scene(): {}'.format(repr(e)))
         return recs_written
 
-    def prep_scenes(self, bbox, **grab_specs):
+    def prep_scenes(self, bbox):
         """Search and group search records into scenes.
 
         Returns: List of lists of records.  
         """
-        specs = self.specs.copy()
-        specs.update(**grab_specs)
         records = self.search(bbox)[::-1]
-        scenes = self._group_into_scenes(bbox, records, **specs)
+        scenes = self._group_into_scenes(bbox, records)
         return scenes
 
-    async def grab_scene(self, bbox, scene, file_header, **grab_specs):
+    async def grab_scene(self, bbox, scene):
         """Retrieve, download, and reprocess scene assets."""
-        specs = self.specs.copy()
-        specs.update(**grab_specs)
         active_assets = await self._retrieve_for_scene(scene)
-        print('Retrieved {}\nDownloading...'.format(
-              [r['id'] for r in scene]), flush=True)
-        staged_assets = self._download_for_scene(active_assets, file_header)
-        written = self._reprocess(bbox, staged_assets, scene, **specs)
+        print('Retrieved {}\nDownloading...'.format([r['id'] for r in scene]),
+              flush=True)
+        staged_assets = self._download_for_scene(active_assets)
+        written = self._reprocess(bbox, staged_assets, scene)
         return written
 
-    async def grab_by_id(self, bbox, catalogID, item_type, file_header='',
-                   **grab_specs):
+    async def grab_by_id(self, bbox, catalogID, item_type):
         """Grab and write image for a known catalogID."""
-        specs = self.specs.copy()
-        specs.update(**grab_specs)
-
+    
         scene = [self.search_id(catalogID, item_type)]
         active_assets = await self.retrieve_assets(catalogID, item_type)
         if not active_assets:
             raise Exception('Catolog entry for id {} not returned.'.format(
                 catalogID))
 
-        staged_assets = self._download_for_scene([active_assets], file_header)
-        written = self._reprocess(bbox, staged_assets, scene, **specs)
+        staged_assets = self._download_for_scene([active_assets])
+        written = self._reprocess(bbox, staged_assets, scene)
         
         return written
     
@@ -219,6 +205,18 @@ class PlanetGrabber(object):
         records = self.search_latlon(lat, lon, max_records=N_records)
         return [_clean_record(r) for r in records]
 
+    def _build_search_filters(self):
+        """Build filters to search catalog."""
+        sf = [api.filters.range_filter('cloud_cover',
+                                       lt=self.specs['clouds']/100)]
+        if self.specs['startDate']:
+            sf.append(api.filters.date_range('acquired',
+                                             gt=self.specs['startDate']))
+        if self.specs['endDate']:
+            sf.append(api.filters.date_range('acquired',
+                                             lt=self.specs['endDate']))
+        return sf
+    
     async def _retrieve_for_scene(self, scene):
         """Schedule asset retrieval for records in scene.
 
@@ -272,23 +270,23 @@ class PlanetGrabber(object):
         """Check asset activation status."""
         return True if asset['status'] == 'active' else False
 
-    def _download_for_scene(self, active_assets, file_header):
+    def _download_for_scene(self, active_assets):
         """Download mulitple assets."""
         staged = [d.copy() for d in active_assets]
         for asset_dict in staged:
             for asset_type, asset in asset_dict.items():
-                path = self.download(asset, file_header)
+                path = self.download(asset)
                 asset_dict[asset_type] = path
         return staged
             
-    def download(self, asset, file_header):
+    def download(self, asset):
         """Download an asset."""
         body = self._client.download(asset).get_body()
-        path = file_header + body.name
+        path = self.specs['file_header'] + body.name
         body.write(file=path)
         return path
 
-    def _reprocess(self, bbox, staged_assets, records, **specs):
+    def _reprocess(self, bbox, staged_assets, records):
         """Run combined geo- and color- postprocessing routines.
 
         Returns: Cleaned, combined record, including paths to final images.
@@ -313,18 +311,17 @@ class PlanetGrabber(object):
                 nir_band = []
             paths = [sa[asset_type] for sa in staged_assets]
             merged_path = self.geo_process(
-                footprint, paths,
-                source_epsg_codes, target_epsg_code,
+                footprint, paths, source_epsg_codes, target_epsg_code,
                 output_bands, nir_band)
-            output_paths = self.color_process(merged_path, asset_type,
-                                              output_bands, nir_band)
+            output_paths = self.color_process(
+                merged_path, asset_type, output_bands, nir_band)
             if self.specs['thumbnails']:
                 resample.make_thumbnails(output_paths)
             scene_record['paths'] += output_paths
         return scene_record
                 
-    def geo_process(self, footprint, paths, source_epsg_codes, target_epsg_code,
-                    output_bands, nir_band):
+    def geo_process(self, footprint, paths, source_epsg_codes,
+                    target_epsg_code, output_bands, nir_band):
         """Reproject, crop to footprint, extract output bands, merge.
 
         Arguments:
@@ -365,7 +362,7 @@ class PlanetGrabber(object):
         return scene_path
         
     def color_process(self, path, asset_type, output_bands, nir_band):
-        """Correct color (producing mutliple versions of the image).
+        """Correct color, producing mutliple versions of the image.
 
         Returns:  Updated record with paths to color-corrected images.
         """
@@ -414,19 +411,19 @@ class PlanetGrabber(object):
     # Functions for grouping records returned by search into
     # collections that can be stitched to cover the requested scene:
     
-    def _group_into_scenes(self, bbox, records, **specs):
+    def _group_into_scenes(self, bbox, records):
         """Find groups of overlapping, same-day images. 
 
         Returns:  List of lists of records
         """
         scenes = []
         records = json.loads(json.dumps(records))
-        while records and len(scenes) < specs['N_images']:
+        while records and len(scenes) < self.specs['N_images']:
             date, groups = self._pop_day(records)
             groups = self._filter_by_overlap(bbox, groups)
             groups = self._filter_copies(groups)
             group_records = [v['records'] for v in groups.values()]
-            while group_records and len(scenes) < specs['N_images']:
+            while group_records and len(scenes) < self.specs['N_images']:
                 scenes.append(group_records.pop())
                 if self.specs['skip_days']:
                     self._fastforward(records, date)
@@ -562,15 +559,6 @@ def _get_footprint(records):
     
 
 # Planet-specific formatting functions
-
-def _build_search_filters(**specs):
-    """Build filters to search catalog."""
-    sf = [api.filters.range_filter('cloud_cover', lt=specs['clouds']/100)]
-    if specs['startDate']:
-        sf.append(api.filters.date_range('acquired', gt=specs['startDate']))
-    if specs['endDate']:
-        sf.append(api.filters.date_range('acquired', lt=specs['endDate']))
-    return sf
 
 def _merge_records(records):
     """Combine records for all images in a scene."""

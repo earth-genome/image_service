@@ -15,11 +15,10 @@ Class DGImageGrabber: A class to grab an image respecting given specs.
         retrieve:  Retrieve dask images objects.
         write_img:  Write a dask image to file.
 
-Usage with default specs (defaults except for N_images, write_styles):
+Usage with default specs:
 > bbox = geobox.bbox_from_scale(37.77, -122.42, 1.0)
 > g = DGImageGrabber()
-> g(bbox, N_images=3, write_styles=['matte', 'contrast'],
-    file_header='SanFrancisco')
+> g(bbox)
 
 Catalog and image specs have defaults set in dg_default_specs.json, which,
 as of writing, takes form:
@@ -32,25 +31,25 @@ as of writing, takes form:
     "skip_days": 0, # min days between scenes if N_images > 1
     "offNadirAngle": null,
     "band_type": "MS",  # mulit-spectral
-    "pansharpen": null,
-    "pansharp_scale": 2.5,  # in km; used by _check_highres(), which sets
-        pansharpen=True below this scale if pansharpen is None
+    "pansharp_scale": 2.5,  # in km; used by _patch_geometric_specs(),
+        which sets pansharpen=True below this scale
+    "override_proj": null, # any EPSG code, e.g. "EPSG:4326"; if null, a UTM
+        projection is determined from the bbox
     "acomp": false,
-    "proj": null, # can be any EPSG, e.g. "EPSG:4326"
     "min_intersect": 0.9,  # min fractional overlap between bbox and scene
     "image_source": [
 	    "WORLDVIEW02",
 	    "WORLDVIEW03_VNIR",
 	    "GEOEYE01"
     ],
-    "proj": null,
     "write_styles": [
         "matte",
         "contrast",
-        "dra",
         "desert"
     ],
-    "thumbnails": false
+    "landcover_indices": [],
+    "thumbnails": false,
+    "file_header": ""
 }
             
 The parameter image_source is from
@@ -59,14 +58,16 @@ The first three are are fairly comparable in resolution
 (.3-.5 meters/pixel if pansharpened) and are currently active.
 The latter two have resolution roughly half that and we decomissioned in 2015.
 
-The parameter pansharpen can take values None, False or True.  If None,
-_patch_null_specs() is called to determine whether pansharpen should
-be True or False according to whether image is smaller or larger than
-pansharp_scale.
+Two parameters are determined within _patch_geometric_specs(self, bbox) and
+added to self.specs during the image pull:
 
-If the parameter proj is None, a Universal Transverse Mercator (UTM) projection
-is applied.  The appropriate EPSG code is computed once a bouning box is given,
-in the method _patch_null_specs().  
+- pansharpen: True or False according to whether image is smaller or
+larger than pansharp_scale.
+
+- proj: In principle this could be any EPSG code, e.g. EPSG:4326, and can
+be set as such by setting override_proj='EPSG:4326'. Generically, here, it
+will be the Universal Transverse Mercator (UTM) projection appropriate for
+the bbox.
 
 A number of idiosyncrasies of the code, including use of asyncio, are
 applied to mirror the syntax of planet_grabber.
@@ -121,71 +122,56 @@ class DGImageGrabber(object):
         with open(specs_filename, 'r') as f:
             self.specs = json.load(f)
         self.specs.update(specs)
-        self._search_filters = _build_search_filters(**self.specs)
+        self._search_filters = self._build_search_filters()
         self._catalog = gbdxtools.catalog.Catalog()
 
-    def __call__(self, bbox, file_header='', **grab_specs):
+    def __call__(self, bbox):
         """Scheduling wrapper for async execution of grab()."""
         loop = asyncio.get_event_loop()
-        recs_written = loop.run_until_complete(asyncio.ensure_future(
-            self.grab(bbox, file_header=file_header, **grab_specs)))
+        recs_written = loop.run_until_complete(self.grab(bbox))
         return recs_written
 
-    async def grab(self, bbox, file_header='', **grab_specs):
+    async def grab(self, bbox):
         """Grab the most recent available images consistent with specs.
 
         Arguments:
             bbox: a shapely box
-            file_header: optional prefix for output image files
-            grab_specs: to override certain elements of self.specs, possibly:
-                N_images: number of images to retrieve
-                write_styles: list of possible output image styles, from:
-                    'DGDRA' (DG Dynamical Range Adjusted RGB PNG), 
-                    styles defined in color.STYLES
             
         Returns: List of records of written images
         """
-        scenes = self.prep_scenes(bbox, **grab_specs)
+        scenes = self.prep_scenes(bbox)
 
         recs_written = []
         for scene in scenes:
-            written = await self.grab_scene(bbox, scene, file_header,
-                                            **grab_specs)
+            written = await self.grab_scene(bbox, scene)
             recs_written.append(written)
             
         return recs_written
 
-    def prep_scenes(self, bbox, **grab_specs):
+    def prep_scenes(self, bbox):
         """Search and collect available dask images and their records.
 
         Returns: Iterator over pairs of form (dask image, record).
         """
-        specs = self._patch_null_specs(bbox)
-        specs.update(**grab_specs)
+        self._patch_geometric_specs(bbox)
         records = self.search(bbox)[::-1]
-        daskimgs, recs_retrieved = self.retrieve(bbox, records, **specs)
+        daskimgs, recs_retrieved = self.retrieve(bbox, records)
         return zip(daskimgs, recs_retrieved)
 
-    async def grab_scene(self, bbox, scene, file_header, **grab_specs):
+    async def grab_scene(self, bbox, scene):
         """Download and reprocess scene assets."""
-        specs = self._patch_null_specs(bbox)
-        specs.update(**grab_specs)
-        written = self.download(bbox, *scene, file_header, **specs)
+        written = self.download(bbox, *scene)
         return written
     
-    async def grab_by_id(self, bbox, catalogID, *args, file_header='',
-                         **grab_specs):
+    async def grab_by_id(self, bbox, catalogID, *args):
         """Grab and write image for a known catalogID."""
-        specs = self._patch_null_specs(bbox)
-        specs.update(**grab_specs)
-        
+        self._patch_geometric_specs(bbox)
         record = self.search_id(catalogID)
-        daskimgs, _ = self.retrieve(bbox, [record], **specs)
+        daskimgs, _ = self.retrieve(bbox, [record])
         if not daskimgs:
             raise Exception('Catolog entry for id {} not returned.'.format(
                 catalogID))
-        written = self.download(bbox, daskimgs[0], record, file_header,
-                                **specs)
+        written = self.download(bbox, daskimgs[0], record)
         return written
         
     def search(self, bbox):
@@ -230,7 +216,18 @@ class DGImageGrabber(object):
         records = self.search_latlon(lat, lon)
         return [_clean_record(r) for r in records[:N_records]]
 
-    def retrieve(self, bbox, records, N_images=1, **specs):
+    def _build_search_filters(self):
+        """Build filters to search catalog."""
+        sensors = ("(" + " OR ".join(["sensorPlatformName = '{}'".format(
+            source) for source in self.specs['image_source']]) + ")")
+        filters = [sensors]
+        filters.append('cloudCover < {:d}'.format(int(self.specs['clouds'])))
+        if self.specs['offNadirAngle']:
+            filters.append('offNadirAngle {} {}'.format(
+                self.specs['offNadirAngle']))
+        return filters
+
+    def retrieve(self, bbox, records):
         """Retrieve dask images from the catalog.
 
         Arugment records:  DG catalog records for the sought images.
@@ -238,13 +235,13 @@ class DGImageGrabber(object):
         Returns:  Lists of the dask image objects and the associaed records.
         """         
         daskimgs, recs_retrieved = [], []
-        while len(records) > 0 and len(daskimgs) < N_images:
+        while len(records) > 0 and len(daskimgs) < self.specs['N_images']:
             record = records.pop()
             catalogID, props = record['identifier'], record['properties']
             print('Trying ID {}:\n {}, {}'.format(
                 catalogID, props['timestamp'], props['sensorPlatformName']))
             try:
-                daskimg = gbdxtools.CatalogImage(catalogID, **specs) 
+                daskimg = gbdxtools.CatalogImage(catalogID, **self.specs) 
                 footprint = wkt.loads(props['footprintWkt'])
                 intersection = bbox.intersection(footprint)
                 daskimgs.append(daskimg.aoi(bbox=intersection.bounds))
@@ -256,23 +253,23 @@ class DGImageGrabber(object):
             except Exception as e:
                 print('Exception: {}'.format(e))
         print('Found {} images of {} requested.'.format(
-            len(daskimgs), N_images), flush=True)
+            len(daskimgs), self.specs['N_images']), flush=True)
         return daskimgs, recs_retrieved
 
-    def download(self, bbox, daskimg, record, file_header, **specs):
+    def download(self, bbox, daskimg, record):
         """Download dask image asset and write to disk.
 
         Returns: Asset record, cleaned and with paths to images added.
         """
-        prefix = _build_filename(bbox, record, file_header)
-        paths = self.write_img(daskimg, prefix, **specs)
+        prefix = _build_filename(bbox, record, self.specs['file_header'])
+        paths = self.write_img(daskimg, prefix)
         if self.specs['thumbnails']:
             resample.make_thumbnails(paths)
         cleaned = _clean_record(record)
         cleaned.update({'paths': paths})
         return cleaned
     
-    def write_img(self, daskimg, file_prefix, write_styles=[], **specs):
+    def write_img(self, daskimg, file_prefix):
         """Write a DG dask image to file.
                               
         Argument write_styles: from 'DGDRA' or styles defined in
@@ -281,7 +278,7 @@ class DGImageGrabber(object):
         Returns: Local paths to images.
         """
         output_paths = []
-        styles = [style.lower() for style in write_styles]
+        styles = [style.lower() for style in self.specs['write_styles']]
 
         # deprecated: DG color correction 
         if 'dgdra' in styles:
@@ -296,9 +293,9 @@ class DGImageGrabber(object):
         path = file_prefix + '.tif'
         print('\nStaging at {}\n'.format(path), flush=True)
         if bands == 4:
-            daskimg.geotiff(path=path, bands=[2,1,0], **specs)
+            daskimg.geotiff(path=path, bands=[2,1,0], **self.specs)
         elif bands == 8:
-            daskimg.geotiff(path=path, bands=[4,2,1], **specs)
+            daskimg.geotiff(path=path, bands=[4,2,1], **self.specs)
 
         def correct_and_write(img, path, style):
             """Correct color and write to file."""
@@ -342,15 +339,22 @@ class DGImageGrabber(object):
     
     # Functions to enforce certain specs.
 
-    def _patch_null_specs(self, bbox):
-        """Determine pansharpening and geoprojection if none specified."""
-        specs = self.specs.copy()
-        if specs['pansharpen'] is None:
-            specs['pansharpen'] = self._check_highres(bbox)
-        if not specs['proj']:
-            code = projections.get_utm_code(bbox.centroid.y, bbox.centroid.x)
-            specs['proj'] = 'EPSG:{}'.format(code)
-        return specs
+    def _patch_geometric_specs(self, bbox):
+        """Determine pansharpening and geoprojection."""
+        if self.specs['override_proj']:
+            proj = self.specs['override_proj']
+        else:
+            epsg_code = projections.get_utm_code(bbox.centroid.y,
+                                                 bbox.centroid.x)
+            proj = 'EPSG:{}'.format(epsg_code)
+            
+        pansharpen = self._check_highres(bbox)
+        
+        self.specs.update({
+            'proj': proj,
+            'pansharpen': pansharpen
+        })
+        return
 
     def _check_highres(self, bbox):
         """Allow highest resolution when bbox smaller than pansharp_scale."""
@@ -396,16 +400,6 @@ def _enforce_date_formatting(**specs):
         else:
             dates.append(None)
     return dates
-
-def _build_search_filters(**specs):
-    """Build filters to search catalog."""
-    sensors = "(" + " OR ".join(["sensorPlatformName = '{}'".format(source)
-                       for source in specs['image_source']]) + ")"
-    filters = [sensors]
-    filters.append('cloudCover < {:d}'.format(int(specs['clouds'])))
-    if specs['offNadirAngle']:
-        filters.append('offNadirAngle {} {}'.format(specs['offNadirAngle']))
-    return filters
 
 def _clean_record(record):
     """Streamline image record."""
