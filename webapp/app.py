@@ -27,11 +27,6 @@ q = Queue('default', connection=worker.connection, default_timeout=3600)
 tnq = Queue('thumbnails', connection=worker.connection, default_timeout=900)
 app = Flask(__name__)
 
-# for help messaging
-EXAMPLE_ARGS = ('provider=digital_globe' +
-                '&lat=36.2553&lon=-112.6980' +
-                '&start=2017-01-01&end=2018-01-01&clouds=10&N=1')
-
 # For Planet imagery:
 KNOWN_ASSET_TYPES = ['analytic', 'ortho_visual', 'visual']
 KNOWN_ITEM_TYPES = ['PSScene3Band', 'PSScene4Band', 'PSOrthoTile',
@@ -40,6 +35,37 @@ KNOWN_ITEM_TYPES = ['PSScene3Band', 'PSScene4Band', 'PSOrthoTile',
 # For Digital Globe:
 KNOWN_IMAGE_SOURCES = ['WORLDVIEW02', 'WORLDVIEW03_VNIR', 'GEOEYE01',
                       'QUICKBIRD02', 'IKONOS']
+
+# for help messaging
+EXAMPLE_ARGS = ('provider=digital_globe' +
+                '&lat=36.2553&lon=-112.6980' +
+                '&start=2017-01-01&end=2018-01-01&clouds=10&N=1')
+
+ARGUMENTS = {
+    'provider': 'One of {}'.format(set(PROVIDER_CLASSES.keys())),
+    'lat, lon': 'Decimal lat, lon',
+    'scale': 'Side length of image in kilometers (float)',
+    'start, end': 'Dates in format YYYY-MM-DD',
+    'N': 'Integer number of images',
+    'skip': 'Minimum number of days between images if N > 1',
+    'clouds': 'Integer percentage cloud cover in range [0, 100]',
+    'min_intersect': 'Float in range [0, 1.0]',
+    'write_styles': 'One or more of {}'.format(
+        set(color.STYLES.keys()).difference(landcover.INDICES.keys())),
+    'indices': 'One or more of {}'.format(
+        set(landcover.INDICES.keys())),
+    'pansharp_scale': 'For DG: max scale for pansharpened images (in km)',
+    'image_source': 'For DG: one or more of {}'.format(
+        set(KNOWN_IMAGE_SOURCES)),
+    'item_types': 'For Planet: one or more of {}'.format(
+        set(KNOWN_ITEM_TYPES)),
+    'asset_types': 'For Planet: one or more of {}'.format(
+        set(KNOWN_ASSET_TYPES)),
+    'bucket_name': 'One of our Google cloud-storage buckets',
+    'thumbnails': 'True/False'
+}
+            
+
 
 @app.route('/')
 def help():
@@ -113,7 +139,11 @@ def search_by_id():
 def pull():
     """Pull images given lat, lon, and scale."""
 
-    notes = ('Provider, lat, lon, scale are required; give scale in km.')
+    notes = {
+        'Required arguments': 'Provider, lat, lon, scale; give scale in km.'
+    }
+    notes.update({'Possible arguments': ARGUMENTS})
+    
     msg = _help_msg(
         request.base_url,
         EXAMPLE_ARGS + '&scale=3.0&min_intersect=.9', notes)
@@ -158,8 +188,8 @@ def pull():
 @app.route('/pull-by-id')
 def pull_by_id():
     """Pull an image for a known catalogID."""
-    notes = ('All arguments but the last are required; ' + 
-             'if the provider is Planet then item_type is also required.')
+    notes = ('All of the above arguments are required, except item_type ' +
+             'when the provider is digital_globe.')
     msg = _help_msg(
         request.base_url,
         ('provider=planet&id=1425880_1056820_2018-05-14_0f18' +
@@ -272,17 +302,16 @@ def _parse_specs(args):
     specs = {
         'startDate': args.get('start'),
         'endDate': args.get('end'),
-        'clouds': args.get('clouds', type=int),
         'N_images': args.get('N', type=int),
-        'min_intersect': args.get('min_intersect', type=float),
-    # The following are special-purpose and excluded from help messaging:
         'skip_days': args.get('skip', type=int),
-        'pansharp_scale': args.get('pansharp_scale', type=float),
-        'item_types': args.getlist('item_types'),
-        'asset_types': args.getlist('asset_types'),
-        'image_source': args.getlist('image_sources'),
+        'clouds': args.get('clouds', type=int),
+        'min_intersect': args.get('min_intersect', type=float),
         'write_styles': args.getlist('write_styles'),
         'landcover_indices': args.getlist('indices'),
+        'pansharp_scale': args.get('pansharp_scale', type=float),
+        'image_source': args.getlist('image_sources'),
+        'item_types': args.getlist('item_types'),
+        'asset_types': args.getlist('asset_types'),
         'bucket_name': args.get('bucket_name'),
         'thumbnails': args.get('thumbnails', type=inputs.boolean)
     }
