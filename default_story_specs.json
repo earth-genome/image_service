@@ -1,17 +1,5 @@
 {
-    "clouds": 10,
-    "min_intersect": 0.9,
-    "startDate": "2008-09-06",
-    "endDate": null,
     "N_images": 3,
-    "write_styles": [
-        "matte",
-        "contrast",
-        "desert"
-    ],
-    "landcover_indices": []
-    "thumbnails": false,
-    "file_header": "",
     "bbox_rescaling": 2,
     "min_size": {
         "digital_globe": 0.5,
