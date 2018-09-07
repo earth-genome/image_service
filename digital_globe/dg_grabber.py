@@ -86,9 +86,10 @@ from shapely import wkt
 import skimage.io
 import gbdxtools  # bug in geo libraries.  import this *after* shapely
 
+from postprocessing import color
+from postprocessing import gdal_routines
 from geobox import geobox
 from geobox import projections
-from postprocessing import color
 from postprocessing import resample
 
 # Default file for catalog and image parameters:
@@ -279,6 +280,7 @@ class DGImageGrabber(object):
         """
         output_paths = []
         styles = [style.lower() for style in self.specs['write_styles']]
+        indices = [index.lower() for index in self.specs['landcover_indices']]
 
         # deprecated: DG color correction 
         if 'dgdra' in styles:
@@ -289,13 +291,14 @@ class DGImageGrabber(object):
                 return paths
 
         # grab the raw geotiff
-        bands = daskimg.shape[0]
         path = file_prefix + '.tif'
+        n_bands = daskimg.shape[0]
+        if indices:
+            bands = _get_nir_bandmap(n_bands)
+        else:
+            bands = _get_bandmap(n_bands)
         print('\nStaging at {}\n'.format(path), flush=True)
-        if bands == 4:
-            daskimg.geotiff(path=path, bands=[2,1,0], **self.specs)
-        elif bands == 8:
-            daskimg.geotiff(path=path, bands=[4,2,1], **self.specs)
+        daskimg.geotiff(path=path, bands=bands, **self.specs)
 
         def correct_and_write(img, path, style):
             """Correct color and write to file."""
@@ -304,11 +307,22 @@ class DGImageGrabber(object):
             print('\nStaging at {}\n'.format(outpath), flush=True)
             skimage.io.imsave(outpath, corrected)
             return outpath
-        
+
+        if indices:
+            img = skimage.io.imread(path).astype('float32')
+            for index in indices:
+                try:
+                    output_paths.append(correct_and_write(img, path, index))
+                except KeyError:
+                    pass
+            path = gdal_routines.reband(path, [1, 2, 3])
+                
         img = color.coarse_adjust(skimage.io.imread(path))
         for style in styles:
-            if style in color.STYLES.keys():
+            try:
                 output_paths.append(correct_and_write(img, path, style))
+            except KeyError:
+                pass
 
         if self.specs['thumbnails']:
             os.remove(path)
@@ -427,6 +441,22 @@ def _build_filename(bbox, record, file_header=''):
     filename = (file_header + record['identifier'] + '_' +
                 record['properties']['timestamp'] + tags)
     return filename
+
+def _get_bandmap(n_bands):
+    """Find the band order for R-G-B bands."""
+    bandmaps = {
+        '4': [2, 1, 0],
+        '8': [4, 2, 1]
+    }
+    return bandmaps[str(n_bands)]
+
+def _get_nir_bandmap(n_bands):
+    """Find the band index for NIR band."""
+    bandmaps = {
+        '4': [2, 1, 0, 3],
+        '8': [4, 2, 1, 6]
+    }
+    return bandmaps[str(n_bands)]
 
 
 
