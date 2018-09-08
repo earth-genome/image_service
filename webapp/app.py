@@ -117,8 +117,8 @@ def search():
 @app.route('/search-by-id')
 def search_by_id():
     """Retrieve catalog record for input catalogID."""
-    notes = ('Provider and id are required; ' +
-             'for Planet the associated item_type also is required.')
+    notes = ('Provider and id are required. For Planet an item_type ' +
+             'from {} is also required.'.format(set(KNOWN_ITEM_TYPES)))
     msg = _help_msg(
         request.base_url,
         ('provider=planet&id=1425880_1056820_2018-05-14_0f18' +
@@ -143,10 +143,8 @@ def pull():
         'Required arguments': 'Provider, lat, lon, scale; give scale in km.'
     }
     notes.update({'Possible arguments': ARGUMENTS})
-    
     msg = _help_msg(
-        request.base_url,
-        EXAMPLE_ARGS + '&scale=3.0&min_intersect=.9', notes)
+        request.base_url, EXAMPLE_ARGS + '&scale=.75&min_intersect=.9', notes)
 
     try:
         provider = _parse_provider(request.args)
@@ -188,12 +186,12 @@ def pull():
 @app.route('/pull-by-id')
 def pull_by_id():
     """Pull an image for a known catalogID."""
-    notes = ('All of the above arguments are required, except item_type ' +
-             'when the provider is digital_globe.')
+    notes = ('All of the above arguments are required. For Planet an ' +
+             'item_type from {} is also required.'.format(
+                 set(KNOWN_ITEM_TYPES)))
     msg = _help_msg(
         request.base_url,
-        ('provider=planet&id=1425880_1056820_2018-05-14_0f18' +
-        '&lat=-121.529&lon=38.455&scale=4.0&item_type=PSOrthoTile'),
+        EXAMPLE_ARGS.split('&start')[0] + '&=103001006B8F9000&scale=.75',
         notes)
 
     try:
