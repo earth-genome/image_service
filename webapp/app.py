@@ -191,7 +191,7 @@ def pull_by_id():
                  set(KNOWN_ITEM_TYPES)))
     msg = _help_msg(
         request.base_url,
-        EXAMPLE_ARGS.split('&start')[0] + '&=103001006B8F9000&scale=.75',
+        EXAMPLE_ARGS.split('&start')[0] + '&id=103001006B8F9000&scale=.75',
         notes)
 
     try:
