@@ -142,7 +142,7 @@ def pull():
     notes = {
         'Required arguments': 'Provider, lat, lon, scale; give scale in km.'
     }
-    notes.update({'Possible arguments': ARGUMENTS})
+    notes.update({'Allowed arguments': ARGUMENTS})
     msg = _help_msg(
         request.base_url, EXAMPLE_ARGS + '&scale=.75&min_intersect=.9', notes)
 
