@@ -6,3 +6,4 @@ gbdxtools
 google-cloud-storage
 planet
 scikit-image
+rasterio
