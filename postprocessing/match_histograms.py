@@ -14,10 +14,8 @@ import argparse
 import sys
 
 import numpy as np
-import skimage.io
-
-sys.path.append('rio-hist/')
 from rio_hist import match
+import skimage.io
 
 IMAGE_EXTS = ('tif', 'jpg', 'png')
 
