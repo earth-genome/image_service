@@ -1,0 +1,2 @@
+FROM image_service_web:latest
+CMD python3 thumbnailworker.py

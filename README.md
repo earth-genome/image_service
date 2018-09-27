@@ -1,10 +1,11 @@
-## Newswire
+## Image Service
 
-This project creates the front-end view of the Earthrise newswire.
+This project establishes a web service for pulling satellite imagery from
+various providers.
 
 ### Developing
 
-The newswire is based a containerized Flask and Jinja web app, deployed on
+The image service is based a containerized Flask web app, deployed on
 Heroku.  To test the app, simply use the following command from the top-level
 directory:
 
@@ -21,10 +22,12 @@ docker-compose build
 
 ### Deploying
 
-The app name on Heroku for this project is `earthrise-newswire`.  As such,
+The app name on Heroku for this project is `earthrise-imagery`.  As such,
 when deploying live, simply use the following command from the top-level
 directory.
 
 ```bash
-heroku container:push web -a earthrise-newswire
+heroku container:push --recursive -a earthrise-imagery
+heroku container:release web worker thumbnailworker
+
 ```

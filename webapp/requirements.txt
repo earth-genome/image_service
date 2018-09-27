@@ -1,4 +1,3 @@
-Flask
 gunicorn
 requests
 watson-developer-cloud
@@ -6,8 +5,13 @@ python-firebase
 numpy
 rasterio
 shapely
-matplotlib
+scikit-image
 tifffile
 gbdxtools
 google-cloud-storage
-scikit-image
+planet
+Flask
+flask_restful
+redis
+rq
+
