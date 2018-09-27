@@ -1,12 +1,16 @@
 ## Image Service
 
 This project establishes a web service for pulling satellite imagery from
-various providers.
+various providers. 
+
+### Dependencies
+
+Code from the grab_imagery repo is invoked to process the pull requests. It is contained as a submodule.
 
 ### Developing
 
 The image service is based a containerized Flask web app, deployed on
-Heroku.  To test the app, simply use the following command from the top-level
+Heroku.  To test the app locally, simply use the following command from the top-level
 directory:
 
 ```bash
