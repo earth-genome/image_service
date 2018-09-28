@@ -86,11 +86,11 @@ from shapely import wkt
 import skimage.io
 import gbdxtools  # bug in geo libraries.  import this *after* shapely
 
-from postprocessing import color
-from postprocessing import gdal_routines
-from geobox import geobox
-from geobox import projections
-from postprocessing import resample
+from grab_imagery.postprocessing import color
+from grab_imagery.postprocessing import gdal_routines
+from grab_imagery.postprocessing import resample
+from utilities.geobox import geobox
+from utilities.geobox import projections
 
 # Default file for catalog and image parameters:
 DEFAULT_SPECS_FILE = os.path.join(os.path.dirname(__file__),
