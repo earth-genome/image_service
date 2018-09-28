@@ -86,9 +86,9 @@ from shapely import wkt
 import skimage.io
 import gbdxtools  # bug in geo libraries.  import this *after* shapely
 
-from grab_imagery.postprocessing import color
-from grab_imagery.postprocessing import gdal_routines
-from grab_imagery.postprocessing import resample
+from postprocessing import color
+from postprocessing import gdal_routines
+from postprocessing import resample
 from utilities.geobox import geobox
 from utilities.geobox import projections
 

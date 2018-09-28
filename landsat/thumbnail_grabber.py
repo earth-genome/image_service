@@ -23,7 +23,7 @@ import os
 import requests
 import skimage.io
 
-import cloud_storage
+from utilities import cloud_storage
 from postprocessing import color
 
 CATALOG_PARAMS = {

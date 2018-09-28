@@ -13,8 +13,7 @@ import argparse
 import json
 import sys
 
-sys.path.append('../')
-from grab_imagery import grabber_handlers
+import grabber_handlers
 
 with open('default_specs.json', 'r') as f:
     DEFAULT_SPECS = json.load(f)
