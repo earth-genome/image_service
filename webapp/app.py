@@ -15,11 +15,11 @@ from flask_restful import inputs
 import numpy as np
 from rq import Queue
 
-from grab_imagery import firebaseio
-from grab_imagery.geobox import geobox
 from grab_imagery.grabber_handlers import PROVIDER_CLASSES
 from grab_imagery.postprocessing import color
 from grab_imagery.postprocessing import landcover
+from grab_imagery.utilities import firebaseio
+from grab_imagery.utilities.geobox import geobox
 import puller_wrappers
 import worker
 
