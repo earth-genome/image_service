@@ -1,0 +1,9 @@
+numpy
+shapely
+tifffile
+requests
+gbdxtools
+google-cloud-storage
+planet
+scikit-image
+rasterio

@@ -1,0 +1,27 @@
+{
+    "clouds": 10,
+    "min_intersect": 0.9,
+    "startDate": "2008-09-01T00:00:00.0000Z",
+    "endDate": null,
+    "N_images": 1,
+    "skip_days": 0,
+    "item_types": [
+	"PSScene3Band",
+	"PSOrthoTile",
+	"REOrthoTile",
+	"SkySatScene"
+    ],
+    "asset_types": [
+	"analytic",
+	"ortho_visual",
+	"visual"
+    ],
+    "write_styles": [
+        "matte",
+	"contrast",
+	"desert"
+    ],
+    "landcover_indices": [],
+    "thumbnails": false,
+    "file_header": ""
+}
