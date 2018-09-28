@@ -3,8 +3,7 @@ import sys
 
 import skimage.io
 
-sys.path.append('../../')
-from grab_imagery.postprocessing import color
+from postprocessing import color
 
 if __name__ == '__main__':
     try:

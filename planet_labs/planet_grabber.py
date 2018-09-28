@@ -60,9 +60,9 @@ from shapely import geometry
 from shapely.ops import cascaded_union
 import skimage.io
 
-from grab_imagery.postprocessing import color
-from grab_imagery.postprocessing import gdal_routines
-from grab_imagery.postprocessing import resample
+from postprocessing import color
+from postprocessing import gdal_routines
+from postprocessing import resample
 
 # Default file for catalog and image parameters:
 DEFAULT_SPECS_FILE = os.path.join(os.path.dirname(__file__),

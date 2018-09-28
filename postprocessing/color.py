@@ -64,7 +64,7 @@ import skimage
 import skimage.io
 from skimage import exposure
 
-from grab_imagery.postprocessing import landcover
+from postprocessing import landcover
 
 
 # For ColorCorrect class, a method decorator to return uint8 images,
