@@ -4,7 +4,7 @@ import subprocess
 
 import numpy as np
 
-from geobox import geobox
+from grab_imagery.utilities.geobox import geobox
 
 def reproject(filename, epsg_code, clean=True):
     """Reproject GeoTiff to a common projection.
