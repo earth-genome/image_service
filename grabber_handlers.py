@@ -99,13 +99,13 @@ import sys
 import numpy as np
 from shapely import geometry
 
-from grab_imagery import cloud_storage
-from grab_imagery import firebaseio
-from grab_imagery import log_utilities
 from grab_imagery.digital_globe import dg_grabber
-from grab_imagery.geobox import geobox
-from grab_imagery.geobox import conversions
 from grab_imagery.planet_labs import planet_grabber
+from grab_imagery.utilities import cloud_storage
+from grab_imagery.utilities import firebaseio
+from grab_imagery.utilities import log_utilities
+from grab_imagery.utilities.geobox import geobox
+from grab_imagery.utilities.geobox import conversions
 
 
 PROVIDER_CLASSES = {
