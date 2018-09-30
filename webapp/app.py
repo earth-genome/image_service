@@ -36,6 +36,9 @@ KNOWN_ITEM_TYPES = ['PSScene3Band', 'PSScene4Band', 'PSOrthoTile',
 KNOWN_IMAGE_SOURCES = ['WORLDVIEW02', 'WORLDVIEW03_VNIR', 'GEOEYE01',
                       'QUICKBIRD02', 'IKONOS']
 
+# WTL database
+STORY_SEEDS = firebaseio.DB(firebaseio.FIREBASE_URL)
+
 # for help messaging
 EXAMPLE_ARGS = ('provider=digital_globe' +
                 '&lat=36.2553&lon=-112.6980' +
@@ -68,7 +71,7 @@ ARGUMENTS = {
 
 
 @app.route('/')
-def help():
+def welcome():
     welcome = ('This web app provides functionality from the following ' + 
         'endpoints, each of which takes required and optional arguments. ' +
         'Hit one of these urls to see specific argument formatting.')
@@ -82,8 +85,6 @@ def help():
             ''.join((request.url, 'pull?')),
         'Pull image for a known catalogID':
             ''.join((request.url, 'pull-by-id?')),
-        'Retrieve a story record from the WTL database':
-            ''.join((request.url, 'retrieve-story?')),
         'Pull images for a story in the WTL database':
             ''.join((request.url, 'pull-for-story?')),
         'Retrieve links to images uploaded to Google Cloud storage':
@@ -220,20 +221,6 @@ def pull_by_id():
     })
     guide = _pulling_guide(request.url_root, db_key, bbox.bounds, **kwargs)
     return json.dumps(guide)
-    
-@app.route('/retrieve-story')
-def retrieve_story():
-    """Retrieve a story record from the WTL database."""
-
-    msg = _help_msg(request.base_url,
-                    'idx=Index of the story in the database', '')
-    try:
-        story  = _parse_index(request.args)
-    except ValueError as e:
-        msg['Exception'] = repr(e)
-        return json.dumps(msg)
-        
-    return json.dumps({story.idx: story.record})
 
 @app.route('/pull-for-story')
 def pull_for_story():
@@ -243,11 +230,16 @@ def pull_for_story():
                     'idx=Index of the story in the database&N=3', '')
 
     try:
-        story = _parse_index(request.args)
+        idx = _parse_index(request.args)
+        record = STORY_SEEDS.get('/WTL', idx)
+        if not record:
+            raise ValueError('Story not found.')
         specs = _parse_specs(request.args)
     except ValueError as e:
         msg['Exception'] = repr(e)
         return json.dumps(msg)
+    
+    story = firebaseio.DBItem('/WTL', idx, record)
 
     db_key = datetime.now().strftime('%Y%m%d%H%M%S%f')
     puller_wrappers.connection.set(db_key, json.dumps('In progress.'))
@@ -336,26 +328,12 @@ def _parse_specs(args):
     specs = {k:v for k,v in specs.items() if v is not None and v != []}
     return specs
 
-
-
 def _parse_index(args):
-    """Parse url arguments for story index.
-
-    Returns: The DBItem story.
-    """
-    STORY_SEEDS = firebaseio.DB(firebaseio.FIREBASE_URL)
-    DB_CATEGORY = '/WTL'
-
-    idx = args.get('idx')
+    """Parse url arguments for story index."""
+    idx = args.get('idx', type=str)
     if not idx:
         raise ValueError('A story index is required.')
-    
-    record = STORY_SEEDS.get(DB_CATEGORY, idx)
-    if not record:
-        raise ValueError('Story not found.')
-    
-    story = firebaseio.DBItem(DB_CATEGORY, idx, record)
-    return story
+    return idx
 
 def _parse_catalog_keys(args):
     """Parse provider, catalogID, and item_type"""
