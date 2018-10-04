@@ -42,7 +42,7 @@ as of writing, takes form:
     ],
     "landcover_indices": [],
     "thumbnails": false,
-    file_header: ""
+    "file_header": ""
 }
 
 """
@@ -364,7 +364,7 @@ class PlanetGrabber(object):
     def color_process(self, path, asset_type, output_bands, nir_band):
         """Correct color, producing mutliple versions of the image.
 
-        Returns:  Updated record with paths to color-corrected images.
+        Returns: Paths to color-corrected images.
         """
         output_paths = []
         styles = [style.lower() for style in self.specs['write_styles']]
