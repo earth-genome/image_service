@@ -166,7 +166,7 @@ class GrabberHandler(object):
     
     def __init__(self,
                  bucket_name=DEFAULT_BUCKET,
-                 providers=PROVIDER_CLASSES.keys(),
+                 providers=['planet'],
                  staging_dir=STAGING_DIR,
                  log_dest=sys.stderr,
                  specs_filename=os.path.join(os.path.dirname(__file__),
