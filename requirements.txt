@@ -1,4 +1,4 @@
-requests
+aiohttp
 python-dateutil
 watson-developer-cloud
 python-firebase
