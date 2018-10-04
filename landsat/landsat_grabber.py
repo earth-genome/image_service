@@ -30,16 +30,15 @@ as of writing, takes form:
 
 """
 
-import aiohttp
 import asyncio
 import datetime
 import io
 import json
 import os
 
+import aiohttp
 import dateutil
 import numpy as np
-import requests
 import skimage.io
 
 from postprocessing import color
