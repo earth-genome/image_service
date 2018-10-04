@@ -9,9 +9,9 @@ and ultimately, the earthrise-imagery web app.
 Class LandsatThumbnails: A class to pull and color correct images.
 
 Usage with default specs:
-> lonlat = shapely.geometry.Point(-122.42, 37.77)
+> bbox = geobox.bbox_from_scale(-122.42, 37.77, 40.0)
 > lt = LandsatThumbnails()
-> lt(lonlat)
+> lt(bbox)
 
 Catalog and image specs have defaults set in planet_default_specs.json, which,
 as of writing, takes form:
@@ -20,7 +20,6 @@ as of writing, takes form:
     "N_images": 1,
     "skip_days": 90,
     "min_skip": 30,  # Floor on skip_days, since scenes are 90-day composited.
-    "landsat_scale": 0.4, # Google Earth Engine image-pyramid scale
     "write_styles": [
         "landsat_contrast"
     ],
@@ -39,10 +38,12 @@ import json
 import os
 
 import dateutil
+import numpy as np
 import requests
 import skimage.io
 
 from postprocessing import color
+from utilities.geobox import geobox
 
 # Default file for catalog and image parameters:
 DEFAULT_SPECS_FILE = os.path.join(os.path.dirname(__file__),
@@ -78,7 +79,7 @@ class LandsatThumbnails(object):
     async def grab(self, bbox):
         """Grab the most recent available images consistent with specs.
     
-        Argument: bbox: a shapely box or point (only centroid is used)
+        Argument: bbox: a shapely box
             
         Returns: List of records of written images
         """
@@ -122,7 +123,7 @@ class LandsatThumbnails(object):
         """Retrieve and reprocess scene assets.
 
         Arguments:
-            bbox: a shapely box or point
+            bbox: a shapely box
             enddate: an isoformat date
 
         Returns: dict record, including 'paths' to images
@@ -140,10 +141,11 @@ class LandsatThumbnails(object):
         payload = {
             'lat': '{:.4f}'.format(bbox.centroid.y),
             'lon': '{:.4f}'.format(bbox.centroid.x),
-            # Note: Scale here refers to the scale of a Google Earth Engine
-            # image pyramid. It is not a bbox side length as elsewhere
-            # in this package.
-            'scale': '{:.1f}'.format(self.specs['landsat_scale']),
+            # The scale parameter accepted by earthrise-assets is a float
+            # in range [0, 2.8], which corresponds roughly (or possibly
+            # exactly?) to the number of hundreds of km of the box side.
+            'scale': '{:.2f}'.format(
+                np.mean(geobox.get_side_distances(bbox))/100),
             'end': enddate
         }
         path = (self.specs['file_header'] +

@@ -3,7 +3,6 @@
     "N_images": 1,
     "skip_days": 90,
     "min_skip": 30,
-    "landsat_scale": 0.4,
     "write_styles": [
 	"landsat_contrast"
     ],
