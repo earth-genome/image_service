@@ -256,7 +256,10 @@ STYLES = {
     # may perform well on scenes whose colors naturally are imbalanced:
     'desert': ColorCorrect(cut_frac=.95).mincolor_correct,
     # for another take on Planet 'visual':
-    'expanded': ColorCorrect(cut_frac=.75).linearly_enhance_contrast
+    'expanded': ColorCorrect(cut_frac=.75).linearly_enhance_contrast,
+    # for landsat retrieved from the earthrise-assets web app:
+    'landsat_contrast': ColorCorrect(
+        cut_frac=.75, gamma=.75, return_ubyte=False).enhance_contrast
 }
 
 # common remote sensing landcover indices (ndvi, ndwi...)

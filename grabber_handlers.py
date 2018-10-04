@@ -100,6 +100,7 @@ import numpy as np
 from shapely import geometry
 
 from digital_globe import dg_grabber
+from landsat import landsat_grabber
 from planet_labs import planet_grabber
 from utilities import cloud_storage
 from utilities import firebaseio
@@ -110,7 +111,8 @@ from utilities.geobox import conversions
 
 PROVIDER_CLASSES = {
     'digital_globe': dg_grabber.DGImageGrabber,
-    'planet': planet_grabber.PlanetGrabber
+    'planet': planet_grabber.PlanetGrabber,
+    'landsat': landsat_grabber.LandsatThumbnails
 }
 
 # For staging, en route to bucket
