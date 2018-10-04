@@ -2,6 +2,7 @@ numpy
 shapely
 tifffile
 requests
+aiohttp
 gbdxtools
 google-cloud-storage
 planet
