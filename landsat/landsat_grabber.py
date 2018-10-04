@@ -48,6 +48,9 @@ from utilities.geobox import geobox
 DEFAULT_SPECS_FILE = os.path.join(os.path.dirname(__file__),
                                   'landsat_default_specs.json')
 
+# For compatability with earthrise-imagery web app and grabber_handlers:
+ADVICE = 'For Landsat only the pull method / endpoint is available.'
+
 class LandsatThumbnails(object):
     """Pull Landsat thumbnails from the earthrise-assets web app.
 
@@ -132,6 +135,24 @@ class LandsatThumbnails(object):
         record.update({'paths': output_paths})
         return record
 
+    async def grab_by_id(self, *args, **kwargs):
+        return ADVICE
+
+    def search(self, *args, **kwargs):
+        return ADVICE
+
+    def search_latlon(self, *args, **kwargs):
+        return ADVICE
+        
+    def search_id(self, *args, **kwargs):
+        return ADVICE
+
+    def search_clean(self, *args, **kwargs):
+        return ADVICE
+        
+    def search_latlon_clean(self, *args, **kwargs):
+        return ADVICE
+    
     async def _retrieve(self, bbox, enddate):
         """Pull image from the web app.
 
