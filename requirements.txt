@@ -1,5 +1,5 @@
-gunicorn
 requests
+python-dateutil
 watson-developer-cloud
 python-firebase
 numpy
@@ -10,6 +10,7 @@ tifffile
 gbdxtools
 google-cloud-storage
 planet
+gunicorn
 Flask
 flask_restful
 redis

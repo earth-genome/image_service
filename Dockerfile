@@ -7,7 +7,7 @@ RUN apt-get install -y libssl-dev libffi-dev libcurl4-openssl-dev
 ENV DEBIAN_FRONTEND noninteractive
 RUN apt-get install -y python3-tk
 
-ADD ./webapp/requirements.txt /tmp/requirements.txt
+ADD ./requirements.txt /tmp/requirements.txt
 
 # Install dependencies
 RUN pip install -r /tmp/requirements.txt
