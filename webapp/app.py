@@ -6,11 +6,10 @@ in worker.py.
 """
 
 from datetime import datetime
-import json
 import os
 import sys
 
-from flask import Flask, request
+from flask import Flask, jsonify, request
 from flask_restful import inputs
 import numpy as np
 from rq import Queue
@@ -90,7 +89,7 @@ def welcome():
         'Retrieve links to images uploaded to Google Cloud storage':
             ''.join((request.url, 'links?'))
     }
-    return json.dumps(msg)
+    return jsonify(msg)
 
 @app.route('/search')
 def search():
@@ -105,15 +104,15 @@ def search():
         specs = _parse_specs(request.args)
     except ValueError as e:
         msg['Exception'] = repr(e)
-        return json.dumps(msg)
+        return jsonify(msg), 400
     try:
         N_records = specs['N_images']
     except KeyError:
-        return json.dumps(msg)
+        return jsonify(msg), 400
 
     grabber = PROVIDER_CLASSES[provider](**specs)
     records = grabber.search_latlon_clean(lat, lon, N_records=N_records)
-    return json.dumps(records)
+    return jsonify(records), 200
 
 @app.route('/search-by-id')
 def search_by_id():
@@ -130,11 +129,11 @@ def search_by_id():
         provider, catalogID, item_type = _parse_catalog_keys(request.args)
     except ValueError as e:
         msg['Exception'] = repr(e)
-        return json.dumps(msg)
+        return jsonify(msg), 400
 
     grabber = PROVIDER_CLASSES[provider]()
     record = grabber.search_id(catalogID, item_type)
-    return json.dumps(record)
+    return jsonify(record), 200
     
 @app.route('/pull')
 def pull():
@@ -153,14 +152,14 @@ def pull():
         specs = _parse_specs(request.args)
     except ValueError as e:
         msg['Exception'] = repr(e)
-        return json.dumps(msg)
+        return jsonify(msg), 400
     if not scale:
-        return json.dumps(msg)
+        return jsonify(msg), 400
 
     bbox = geobox.bbox_from_scale(lat, lon, scale)
     kwargs = dict({'providers': [provider]}, **specs)
     db_key = datetime.now().strftime('%Y%m%d%H%M%S%f')
-    puller_wrappers.connection.set(db_key, json.dumps('In progress.'))
+    puller_wrappers.connection.set(db_key, jsonify('In progress.'))
 
     if specs.get('thumbnails'):
         job = tnq.enqueue_call(
@@ -174,7 +173,7 @@ def pull():
             kwargs=kwargs)
 
     guide = _pulling_guide(request.url_root, db_key, bbox.bounds, **kwargs)
-    return json.dumps(guide)
+    return jsonify(guide), 200
 
 @app.route('/pull-by-id')
 def pull_by_id():
@@ -193,14 +192,14 @@ def pull_by_id():
         specs = _parse_specs(request.args)
     except ValueError as e:
         msg['Exception'] = repr(e)
-        return json.dumps(msg)
+        return jsonify(msg), 400
     if not scale:
-        return json.dumps(msg)
+        return jsonify(msg), 400
 
     bbox = geobox.bbox_from_scale(lat, lon, scale)
     kwargs = dict({'providers': [provider]}, **specs)
     db_key = datetime.now().strftime('%Y%m%d%H%M%S%f')
-    puller_wrappers.connection.set(db_key, json.dumps('In progress.'))
+    puller_wrappers.connection.set(db_key, jsonify('In progress.'))
     
     job = q.enqueue_call(
         func=puller_wrappers.pull_by_id,
@@ -212,7 +211,7 @@ def pull_by_id():
         'item_type': item_type
     })
     guide = _pulling_guide(request.url_root, db_key, bbox.bounds, **kwargs)
-    return json.dumps(guide)
+    return jsonify(guide), 200
 
 @app.route('/pull-for-story')
 def pull_for_story():
@@ -229,12 +228,12 @@ def pull_for_story():
         specs = _parse_specs(request.args)
     except ValueError as e:
         msg['Exception'] = repr(e)
-        return json.dumps(msg)
+        return jsonify(msg), 400
     
     story = firebaseio.DBItem('/WTL', idx, record)
 
     db_key = datetime.now().strftime('%Y%m%d%H%M%S%f')
-    puller_wrappers.connection.set(db_key, json.dumps('In progress.'))
+    puller_wrappers.connection.set(db_key, jsonify('In progress.'))
 
     job = q.enqueue_call(
         func=puller_wrappers.pull_for_story,
@@ -243,7 +242,7 @@ def pull_for_story():
         timeout=7200)
 
     guide = _pulling_guide(request.url_root, db_key, story.idx, **specs)
-    return json.dumps(guide)
+    return jsonify(guide), 200
 
 @app.route('/links')
 def get_links():
@@ -255,9 +254,9 @@ def get_links():
     
     key = request.args.get('key')
     if not key:
-        return json.dumps(msg)
+        return jsonify(msg), 400
 
-    return puller_wrappers.connection.get(key)
+    return puller_wrappers.connection.get(key), 200
 
 # Argument parsing functions
 
