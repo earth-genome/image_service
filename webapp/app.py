@@ -162,19 +162,11 @@ def pull():
     db_key = datetime.now().strftime('%Y%m%d%H%M%S%f')
     puller_wrappers.connection.set(db_key, json.dumps('In progress.'))
 
-    if 'thumbnails' in specs.keys() and specs['thumbnails']:
+    if specs.get('thumbnails'):
         job = tnq.enqueue_call(
             func=puller_wrappers.pull,
             args=(db_key, bbox),
             kwargs=kwargs)
-        try:
-            print('As dict: {}'.format(job['args']))
-        except:
-            pass
-        try:
-            print('As attribute: {}'.format(job.args))
-        except:
-            pass
     else:
         job = q.enqueue_call(
             func=puller_wrappers.pull,
