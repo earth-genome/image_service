@@ -6,6 +6,7 @@ in worker.py.
 """
 
 from datetime import datetime
+import json
 import os
 import sys
 
@@ -159,7 +160,7 @@ def pull():
     bbox = geobox.bbox_from_scale(lat, lon, scale)
     kwargs = dict({'providers': [provider]}, **specs)
     db_key = datetime.now().strftime('%Y%m%d%H%M%S%f')
-    puller_wrappers.connection.set(db_key, jsonify('In progress.'))
+    puller_wrappers.connection.set(db_key, json.dumps('In progress.'))
 
     if specs.get('thumbnails'):
         job = tnq.enqueue_call(
@@ -199,7 +200,7 @@ def pull_by_id():
     bbox = geobox.bbox_from_scale(lat, lon, scale)
     kwargs = dict({'providers': [provider]}, **specs)
     db_key = datetime.now().strftime('%Y%m%d%H%M%S%f')
-    puller_wrappers.connection.set(db_key, jsonify('In progress.'))
+    puller_wrappers.connection.set(db_key, json.dumps('In progress.'))
     
     job = q.enqueue_call(
         func=puller_wrappers.pull_by_id,
@@ -233,7 +234,7 @@ def pull_for_story():
     story = firebaseio.DBItem('/WTL', idx, record)
 
     db_key = datetime.now().strftime('%Y%m%d%H%M%S%f')
-    puller_wrappers.connection.set(db_key, jsonify('In progress.'))
+    puller_wrappers.connection.set(db_key, json.dumps('In progress.'))
 
     job = q.enqueue_call(
         func=puller_wrappers.pull_for_story,
