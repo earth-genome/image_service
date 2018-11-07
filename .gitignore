@@ -2,3 +2,7 @@
 */.DS_Store
 
 webapp/__pycache__
+
+# api keys and such
+.env
+webapp/.google_config.json
