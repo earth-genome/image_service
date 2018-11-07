@@ -105,6 +105,16 @@ def search():
     except KeyError:
         return jsonify(msg), 400
 
+    # Override default specs to search all available assets:
+    if not specs.get('item_types'):
+        specs['item_types'] = KNOWN_ITEM_TYPES.copy()
+        try: 
+            specs['item_types'].remove('PSScene4Band')
+        except ValueError:
+            pass
+    if not specs.get('image_source'):
+        specs['image_source'] = KNOWN_IMAGE_SOURCES.copy()
+
     grabber = PROVIDER_CLASSES[provider](**specs)
     records = grabber.search_latlon_clean(lat, lon, N_records=N_records)
     return jsonify(records), 200
