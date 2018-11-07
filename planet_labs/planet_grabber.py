@@ -168,7 +168,7 @@ class PlanetGrabber(object):
         query = api.filters.and_filter(
             api.filters.geom_filter(aoi), *self._search_filters)
         request = api.filters.build_search_request(query,
-            item_types=KNOWN_ITEM_TYPES)
+            item_types=self.specs['item_types'])
         response = self._client.quick_search(request, sort='acquired desc')
 
         # The final iteration over response items is time expensive, ergo
