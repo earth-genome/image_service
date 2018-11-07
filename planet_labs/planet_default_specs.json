@@ -6,15 +6,10 @@
     "N_images": 1,
     "skip_days": 0,
     "item_types": [
-	"PSScene3Band",
-	"PSOrthoTile",
-	"REOrthoTile",
-	"SkySatScene"
+	"PSScene3Band"
     ],
     "asset_types": [
-	"analytic",
-	"ortho_visual",
-	"visual"
+	"analytic"
     ],
     "write_styles": [
         "matte",
