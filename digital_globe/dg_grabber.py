@@ -96,6 +96,9 @@ from utilities.geobox import projections
 DEFAULT_SPECS_FILE = os.path.join(os.path.dirname(__file__),
                                   'dg_default_specs.json')
 
+KNOWN_IMAGE_SOURCES = ['WORLDVIEW02', 'WORLDVIEW03_VNIR', 'GEOEYE01',
+                      'QUICKBIRD02', 'IKONOS']
+    
 class DGImageGrabber(object):
     
     """Class DGImageGrabber: Tool to grab a DG image respecting given specs.

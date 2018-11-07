@@ -26,14 +26,9 @@ as of writing, takes form:
     "skip_days": 0, # min days between scenes if N_images > 1
     "item_types": [
 	    "PSScene3Band",
-	    "PSOrthoTile",
-	    "REOrthoTile",
-	    "SkySatScene"
     ],
     "asset_types": [   
 	    "analytic",
-	    "ortho_visual",
-	    "visual"
     ],
     "write_styles": [
         "matte",
@@ -67,6 +62,10 @@ from postprocessing import resample
 # Default file for catalog and image parameters:
 DEFAULT_SPECS_FILE = os.path.join(os.path.dirname(__file__),
                                   'planet_default_specs.json')
+
+KNOWN_ITEM_TYPES = ['PSScene3Band', 'PSScene4Band', 'PSOrthoTile',
+                    'REOrthoTile', 'SkySatScene']
+KNOWN_ASSET_TYPES = ['analytic', 'ortho_visual', 'visual']
 
 # For asynchronous handling of scene activation and download, in seconds:
 WAITTIME = 10
@@ -169,7 +168,7 @@ class PlanetGrabber(object):
         query = api.filters.and_filter(
             api.filters.geom_filter(aoi), *self._search_filters)
         request = api.filters.build_search_request(query,
-            item_types=self.specs['item_types'])
+            item_types=KNOWN_ITEM_TYPES)
         response = self._client.quick_search(request, sort='acquired desc')
 
         # The final iteration over response items is time expensive, ergo
@@ -612,7 +611,8 @@ def _get_bandmap(item_type, asset_type):
             'analytic': [3, 2, 1]
         },
         'SkySatScene': {
-            'ortho_visual': [3, 2, 1]
+            'ortho_visual': [3, 2, 1],
+            'analytic': [3, 2, 1]
         }
     }
     try:
@@ -633,6 +633,9 @@ def _get_nir_bandmap(item_type, asset_type):
         },
         'REOrthoTile': {
             'analytic': [5]
+        },
+        'SkySatScene': {
+            'analytic': [4]
         }
     }
     try:
