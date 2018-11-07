@@ -15,7 +15,10 @@ from flask_restful import inputs
 import numpy as np
 from rq import Queue
 
+from grab_imagery.digital_globe.dg_grabber import KNOWN_IMAGE_SOURCES
 from grab_imagery.grabber_handlers import PROVIDER_CLASSES
+from grab_imagery.planet_labs.planet_grabber import KNOWN_ITEM_TYPES
+from grab_imagery.planet_labs.planet_grabber import KNOWN_ASSET_TYPES
 from grab_imagery.postprocessing import color
 from grab_imagery.postprocessing import landcover
 from grab_imagery.utilities import firebaseio
@@ -26,15 +29,6 @@ import worker
 q = Queue('default', connection=worker.connection, default_timeout=3600)
 tnq = Queue('thumbnails', connection=worker.connection, default_timeout=900)
 app = Flask(__name__)
-
-# For Planet imagery:
-KNOWN_ASSET_TYPES = ['analytic', 'ortho_visual', 'visual']
-KNOWN_ITEM_TYPES = ['PSScene3Band', 'PSScene4Band', 'PSOrthoTile',
-                    'REOrthoTile', 'SkySatScene']
-
-# For Digital Globe:
-KNOWN_IMAGE_SOURCES = ['WORLDVIEW02', 'WORLDVIEW03_VNIR', 'GEOEYE01',
-                      'QUICKBIRD02', 'IKONOS']
 
 # WTL database
 STORY_SEEDS = firebaseio.DB(firebaseio.FIREBASE_URL)
@@ -315,7 +309,7 @@ def _parse_specs(args):
     
     # override defaults to ensure availability of NIR band in this case:
     if specs['landcover_indices'] and not specs['item_types']:
-        specs['item_types'] = ['PSScene4Band', 'PSOrthoTile', 'REOrthoTile']
+        specs['item_types'] = ['PSScene4Band']
     
     specs = {k:v for k,v in specs.items() if v is not None and v != []}
     return specs
