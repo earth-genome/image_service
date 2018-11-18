@@ -1,18 +1,18 @@
 aiohttp
 python-dateutil
-watson-developer-cloud
+watson-developer-cloud==2.2.6
 python-firebase
 numpy
 rasterio
 shapely
 scikit-image
 tifffile
-gbdxtools
+gbdxtools==0.16.0
 google-cloud-storage
-planet
+planet==1.2.0
 gunicorn
 Flask
 flask_restful
-redis
-rq
+redis==2.10.6
+rq==0.12.0
 
