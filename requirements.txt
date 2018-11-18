@@ -1,6 +1,5 @@
 aiohttp
 python-dateutil
-watson-developer-cloud==2.2.6
 python-firebase
 numpy
 rasterio
