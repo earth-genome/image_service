@@ -16,6 +16,9 @@ Then:
 
 $ python reduce_landsat.py 4 3 2 -g footprint.geojson -d image_dir -wp 3500
 
+For help:
+$ python reduce_landsat.py -h
+
 The band ordering 4 3 2 or 3 2 1 is required. The scenes will be
 cropped to the footprint, if given. The image_dir defaults to pwd if not
 specified. 
@@ -39,6 +42,7 @@ import subprocess
 from shapely import geometry
 
 WHITE_PT = 3500
+BIT_DEPTH = 8
 
 def partition(bandfiles):
     """Partition input filenames according to shared prefix.
@@ -56,15 +60,17 @@ def combine_bands(prefix, rgbfiles):
     subprocess.call(commands)
     return combined
 
-def crop_and_rescale(vrtfile, bounds, whitepoint):
+def crop_and_rescale(vrtfile, bounds, **kwargs):
     """Crop virtual image and linearly rescale the image histogram.
 
     Arguments: 
         vrtfile: A GDAL .vrt image file
         bounds: lat/lon coordinates, ordered [minx, miny, maxx, maxy], or []
-        whitepoint: The 16-bit image value that should be reset to white
+        **kwargs including:
+            white_point: The 16-bit image value that should be reset to white
+            bit_depth: bit-depth for output image, either 8 or 16
 
-    Output: An 8-bit geotiff
+    Output: A geotiff
 
     Returns: Geotiff filename
     """
@@ -72,11 +78,23 @@ def crop_and_rescale(vrtfile, bounds, whitepoint):
     commands = [
         'gdal_translate', vrtfile, tiffile,
         '-co', 'COMPRESS=LZW',
-        '-colorinterp', 'red,green,blue',
-        '-ot', 'Byte', '-scale', '0', str(whitepoint), '0', '255']
+        '-colorinterp', 'red,green,blue']
     if bounds:
         gdal_bounds = [str(bounds[n]) for n in (0, 3, 2, 1)]
         commands += ['-projwin_srs', 'EPSG:4326', '-projwin', *gdal_bounds]
+    if kwargs['bit_depth'] == 8:
+        commands += [
+            '-ot', 'Byte',
+            '-scale', '0', str(kwargs['white_point']), '0', '255'
+        ]
+    elif kwargs['bit_depth'] == 16:
+        commands += [
+            '-ot', 'UInt16',
+            '-scale', '0', str(kwargs['white_point']), '0', '65535'
+        ]
+    else:
+        raise ValueError('Invalid output bit depth: {}.'.format(
+            kwargs['bit_depth']))
     subprocess.call(commands)
     return tiffile
 
@@ -124,6 +142,13 @@ if __name__ == '__main__':
         default='',
         help='Directory containing image band files. Defaults to pwd.'
     )
+    parser.add_argument(
+        '-b', '--bit_depth',
+        type=int,
+        default=BIT_DEPTH,
+        help='Bit-depth of output image, either 8 or 16. Default: {}'.format(
+            BIT_DEPTH)
+    )
     args = parser.parse_args()
 
     if args.geojson:
@@ -144,7 +169,7 @@ if __name__ == '__main__':
             print('Incomplete R-G-B set for file prefix {}'.format(prefix))
             continue
         vrtfile = combine_bands(prefix, rgbfiles)
-        outfile = crop_and_rescale(vrtfile, bounds, args.white_point)
+        outfile = crop_and_rescale(vrtfile, bounds, **vars(args))
         os.remove(vrtfile)
         geotiffs.append(outfile)
     print('Files written: {}'.format(geotiffs))
