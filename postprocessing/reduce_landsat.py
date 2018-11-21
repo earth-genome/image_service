@@ -1,3 +1,34 @@
+"""Routines to process Landsat Surface Reflectance tiles. 
+
+Ordered from https://earthexplorer.usgs.gov, scenes are delivered as tar
+files containing each band as a separte TIF, with filenames of form
+
+LC08_L1TP_037034_20170309_20180125_01_T1_sr_band2.tif
+
+For Landsat8, R-G-B images are built from bands 4-3-2. For Landsat5, R-G-B 
+are built from bands 3-2-1.  
+
+Usage: Untar everything into a folder. Multiple scenes are fine, as the 
+program will untangle them. The only restriction is that all band files
+for a scene must share a common prefix, with filename of form prefixband?.tif.
+
+Then: 
+
+$ python reduce_landsat.py 4 3 2 -g footprint.geojson -d image_dir -wp 3500
+
+The band ordering 4 3 2 or 3 2 1 is required. The scenes will be
+cropped to the footprint, if given. The image_dir defaults to pwd if not
+specified. 
+
+The -wp flag sets the white point of the output images. The Landsat
+histograms are confined to a small part of the possible 16-bit
+range. In light testing, 3500 (max 2**16 - 1 = 65535) seems reasonable
+default white point for a linear rescaling of the histogram. Adjust
+this if the output image is overly dark or overly saturated.
+
+The routine outputs one 8-bit TIF for each processed scene.
+
+"""
 
 import argparse
 import glob
@@ -7,10 +38,7 @@ import subprocess
 
 from shapely import geometry
 
-# In light testing, this seems to be a reasonable and common 16-bit value
-# (max 2**16 - 1 = 65535) to set as white point in a linear rescaling
-# of the Landsat image histogram. Can be overriden with command line flag -wp.
-WHITE = 3500
+WHITE_PT = 3500
 
 def partition(bandfiles):
     """Partition input filenames according to shared prefix.
@@ -33,10 +61,10 @@ def crop_and_rescale(vrtfile, bounds, whitepoint):
 
     Arguments: 
         vrtfile: A GDAL .vrt image file
-        bounds: lat/lon coordinates [minx, miny, maxx, maxy], or []
+        bounds: lat/lon coordinates, ordered [minx, miny, maxx, maxy], or []
         whitepoint: The 16-bit image value that should be reset to white
 
-    Output: A geotiff
+    Output: An 8-bit geotiff
 
     Returns: Geotiff filename
     """
@@ -86,9 +114,15 @@ if __name__ == '__main__':
     parser.add_argument(
         '-wp', '--white_point',
         type=int,
-        default=WHITE,
+        default=WHITE_PT,
         help='16-bit image value to be reset to white. Default: {}'.format(
-            WHITE)
+            WHITE_PT)
+    )
+    parser.add_argument(
+        '-d', '--image_dir',
+        type=str,
+        default='',
+        help='Directory containing image band files. Defaults to pwd.'
     )
     args = parser.parse_args()
 
@@ -100,7 +134,7 @@ if __name__ == '__main__':
     else:
         bounds = []
 
-    bandfiles = glob.glob('*band?.tif')
+    bandfiles = glob.glob(os.path.join(args.image_dir,'*band?.tif'))
     grouped = partition(bandfiles)
     geotiffs = []
     for prefix, files in grouped.items():
@@ -113,6 +147,6 @@ if __name__ == '__main__':
         outfile = crop_and_rescale(vrtfile, bounds, args.white_point)
         os.remove(vrtfile)
         geotiffs.append(outfile)
-    print(geotiffs)
+    print('Files written: {}'.format(geotiffs))
 
     
