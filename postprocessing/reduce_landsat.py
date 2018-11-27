@@ -42,7 +42,7 @@ import subprocess
 from shapely import geometry
 
 WHITE_PT = 3500
-BIT_DEPTH = 8
+BIT_DEPTH = 16
 
 def partition(bandfiles):
     """Partition input filenames according to shared prefix.
