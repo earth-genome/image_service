@@ -1,3 +1,9 @@
+"""Dated routine to color correct Planet imagery reduced via
+reduce_planet_anlaytic.sh. Run from the parent folder (grab_imagery)
+to pickup the postprocessing dependency. Probably needs updating. No
+warraties implied.  
+
+"""
 
 import sys
 
@@ -9,7 +15,7 @@ if __name__ == '__main__':
     try:
         img_file = sys.argv[1]
     except KeyError:
-        print('Usage: python reduce_planet_visual.py image.tif')
+        print('Usage: python manual reduce_planet_visual.py image.tif')
         sys.exit(0)
     img = skimage.io.imread(img_file)
     cc = color.ColorCorrect()
