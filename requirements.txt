@@ -8,4 +8,5 @@ google-cloud-storage
 planet
 scikit-image
 rasterio
+rio_hist
 python-dateutil
