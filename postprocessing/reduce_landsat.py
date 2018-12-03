@@ -9,8 +9,9 @@ For Landsat8, R-G-B images are built from bands 4-3-2. For Landsat5, R-G-B
 are built from bands 3-2-1.  
 
 Usage: Untar everything into a folder. Multiple scenes are fine, as the 
-program will untangle them. The only restriction is that all band files
-for a scene must share a common prefix, with filename of form prefixband?.tif.
+program will untangle them. The only restrictions are that all band files
+for a scene must share a common prefix, with filename of form prefixband?.tif,
+and be Int16 or Uint16 in type.
 
 Then: 
 
@@ -29,7 +30,7 @@ range. In light testing, 3500 (max 2**16 - 1 = 65535) seems reasonable
 default white point for a linear rescaling of the histogram. Adjust
 this if the output image is overly dark or overly saturated.
 
-The routine outputs one 8-bit TIF for each processed scene.
+The routine outputs one geotiff for each processed scene.
 
 """
 
@@ -44,29 +45,14 @@ from shapely import geometry
 WHITE_PT = 3500
 BIT_DEPTH = 16
 
-def partition(bandfiles):
-    """Partition input filenames according to shared prefix.
-
-    Returns: dict of prefixes and filenames
-    """
-    prefixes = set([f.split('band')[0] for f in bandfiles])
-    partition = {p:[f for f in bandfiles if p in f] for p in prefixes}
-    return partition
-
-def combine_bands(prefix, rgbfiles):
-    """Assemble R-G-B image bands into GDAL .vrt file."""
-    combined = prefix + '.vrt'
-    commands = ['gdalbuildvrt', '-separate', combined, *rgbfiles]
-    subprocess.call(commands)
-    return combined
-
-def crop_and_rescale(vrtfile, bounds, **kwargs):
-    """Crop virtual image and linearly rescale the image histogram.
+def build_rgb(prefix, files, bounds, **kwargs):
+    """Build an RGB image from individual color bands.
 
     Arguments: 
-        vrtfile: A GDAL .vrt image file
+        prefix: common filename prefix for image bands
+        files: list of R, G, B, geotiffs 
         bounds: lat/lon coordinates, ordered [minx, miny, maxx, maxy], or []
-        **kwargs including:
+        **kwargs, including:
             white_point: The 16-bit image value that should be reset to white
             bit_depth: bit-depth for output image, either 8 or 16
 
@@ -74,11 +60,29 @@ def crop_and_rescale(vrtfile, bounds, **kwargs):
 
     Returns: Geotiff filename
     """
+    vrtfile = combine_bands(prefix, files)
+    outfile = crop_and_rescale(vrtfile, bounds, **kwargs)
+    os.remove(vrtfile)
+    return outfile
+
+def combine_bands(prefix, files):
+    """Assemble R-G-B image bands into GDAL .vrt file."""
+    combined = prefix + '.vrt'
+    commands = ['gdalbuildvrt', '-separate', combined, *files]
+    subprocess.call(commands)
+    return combined
+
+def crop_and_rescale(vrtfile, bounds, **kwargs):
+    """Crop virtual image to bounds and linearly rescale the histogram.
+
+    Outputs a geotiff; returns the filename.
+    """
     tiffile = vrtfile.split('.vrt')[0] + '.tif'
     commands = [
         'gdal_translate', vrtfile, tiffile,
         '-co', 'COMPRESS=LZW',
-        '-colorinterp', 'red,green,blue']
+        '-colorinterp', 'red,green,blue'
+    ]
     if bounds:
         gdal_bounds = [str(bounds[n]) for n in (0, 3, 2, 1)]
         commands += ['-projwin_srs', 'EPSG:4326', '-projwin', *gdal_bounds]
@@ -98,6 +102,42 @@ def crop_and_rescale(vrtfile, bounds, **kwargs):
     subprocess.call(commands)
     return tiffile
 
+# Image file handling
+
+def partition(filenames, bandlist):
+    """Partition input filenames by common prefixes and filter by bandlist.
+
+    Returns: dict of prefixes and filenames
+    """
+    prefixes = set([f.split('band')[0] for f in filenames])
+    partition = {p:[f for f in filenames if p in f] for p in prefixes}
+    filtered = {p:filter_bands(p, files, bandlist) for p,files 
+                    in partition.items()}
+    return filtered
+
+def filter_bands(prefix, files, bandlist):
+    """Select from list of files those bands numbered in bandlist.
+
+    Returns: List of filenames
+    """
+    bandfiles = [prefix + 'band{}.tif'.format(b) for b in bandlist]
+    for f in bandfiles:
+        if f not in files:
+            raise FileNotFoundError('Missing color bands for {}'.format(prefix))
+    return bandfiles
+
+# Geojson handling
+
+def get_bounds(geojson):
+    """Extract bounding box from first geometry in geojson.
+
+    Returns: List of coordinates ordered [minx, miny, maxx, maxy]
+    """
+    with open(geojson, 'r') as f:
+        collection = json.load(f)
+    geom = extract_geom(collection)
+    return list(geometry.asShape(geom).bounds)
+    
 def extract_geom(geojson):
     """Find the first available geometry in the geojson."""
     if geojson['type'] == 'FeatureCollection':
@@ -112,6 +152,7 @@ def extract_geom(geojson):
             geojson['type']))
     return geom
 
+        
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='Process Landsat surface reflectance tiles. Routine ' +
@@ -123,7 +164,8 @@ if __name__ == '__main__':
         type=str,
         nargs='+',
         help='Band numbers to assemble in R-G-B order. E.g. 4 3 2 ' +
-            'for Landsat 8 or 3 2 1 for Landsat 5.')
+            'for Landsat8 or 3 2 1 for Landsat5.'
+    )
     parser.add_argument(
         '-g', '--geojson',
         type=str,
@@ -151,27 +193,14 @@ if __name__ == '__main__':
     )
     args = parser.parse_args()
 
-    if args.geojson:
-        with open(args.geojson, 'r') as f:
-            collection = json.load(f)
-        geom = extract_geom(collection)
-        bounds = geometry.asShape(geom).bounds
-    else:
-        bounds = []
-
-    bandfiles = glob.glob(os.path.join(args.image_dir,'*band?.tif'))
-    grouped = partition(bandfiles)
-    geotiffs = []
+    bounds = get_bounds(args.geojson) if args.geojson else []
+    image_files = glob.glob(os.path.join(args.image_dir, '*band?.tif'))
+    grouped = partition(image_files, args.bandlist)
     for prefix, files in grouped.items():
-        rgbfiles = [prefix + 'band{}.tif'.format(b) for b in args.bandlist]
-        rgbfiles = [f for f in rgbfiles if f in files]
-        if len(rgbfiles) != 3: 
-            print('Incomplete R-G-B set for file prefix {}'.format(prefix))
-            continue
-        vrtfile = combine_bands(prefix, rgbfiles)
-        outfile = crop_and_rescale(vrtfile, bounds, **vars(args))
-        os.remove(vrtfile)
-        geotiffs.append(outfile)
-    print('Files written: {}'.format(geotiffs))
+        try:
+            build_rgb(prefix, files, bounds, **vars(args))
+        except FileNotFoundError as e:
+            print('{}\nContinuing...'.format(repr(e)))
+
 
     
