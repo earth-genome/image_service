@@ -3,6 +3,8 @@ services:
   web:
     build: .
     env_file: .env
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/opt/webapp/.google_config.json
     links:
       - redis_worker
       - redis_db
@@ -22,8 +24,12 @@ services:
   worker:
     image: image_service_web:latest
     env_file: .env
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/opt/webapp/.google_config.json
     command: python3 worker.py
   thumbnailworker:
     image: image_service_web:latest
     env_file: .env
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/opt/webapp/.google_config.json
     command: python3 thumbnailworker.py
