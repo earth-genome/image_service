@@ -3,9 +3,11 @@
 This project establishes a web service for pulling satellite imagery from
 various providers. 
 
-### Dependencies
+### Dependencies 
 
 Code from the grab_imagery repo is invoked to process the pull requests. It is contained as a submodule.
+
+Out-of-repo files .env and webapp/.google_config.json containing API keys for Digital Globe, Planet, and Google cloud storage.
 
 ### Developing
 
