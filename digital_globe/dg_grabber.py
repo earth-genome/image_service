@@ -276,22 +276,14 @@ class DGImageGrabber(object):
     def write_img(self, daskimg, file_prefix):
         """Write a DG dask image to file.
                               
-        Argument write_styles: from 'DGDRA' or styles defined in
-            postprocessing.color.  If empty, a raw GeoTiff is written.
+        Argument write_styles: From styles defined in postprocessing.color.  
+            If empty, a raw GeoTiff is written.
                 
         Returns: Local paths to images.
         """
         output_paths = []
         styles = [style.lower() for style in self.specs['write_styles']]
         indices = [index.lower() for index in self.specs['landcover_indices']]
-
-        # deprecated: DG color correction 
-        if 'dgdra' in styles:
-            outpath = write_dg_dra(daskimg, file_prefix)
-            output_paths.append(outpath)
-            styles.remove('dgdra')
-            if not styles:
-                return paths
 
         # grab the raw geotiff
         path = file_prefix + '.tif'
@@ -388,16 +380,6 @@ class DGImageGrabber(object):
             print('Rejectd ID {}: Overlap with bbox {:.1f}%'.format(
                 record['properties']['catalogID'], 100 * intersect_frac))
         return wo
-
-# deprecated image writing: 
-
-def write_dg_dra(daskimg, file_prefix):
-    """Write an image using the DG rgb() method (DG's DRA routines)."""
-    rgb = daskimg.rgb()
-    filename = file_prefix + 'DGDRA.png'
-    print('\nSaving to {}\n'.format(filename))
-    skimage.io.imsave(filename, rgb)
-    return filename
 
 # DG-specific formatting functions
 
