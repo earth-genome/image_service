@@ -216,34 +216,6 @@ class ColorCorrect(object):
             raise TypeError('Expecting dtype uint16, uint8 or float32.')
         return img_max
 
-    
-def coarse_adjust(img):
-    """Convert to uint16 and do a rough bandwise histogram expansion.
-
-    As of April 2018, the dtype kwarg to DG img.geotiff method has
-    no discernible effect. Sometimes images come as float32 with a
-    uint16-like value range, sometimes as uint16. I have observed pixel
-    values larger than 2**14, but not as of yet larger than 2**16,
-    and generally the histogram is concentrated in the first
-    twelve bits. Relative R-G-B weightings are not reproduced consistently
-    from image to image of the same scene.
-
-    This function does a rough color correction and histogram expansion,
-    finding the pixel value for the 99th percentile for each band and
-    resetting that to 1e4.  It allows ColorCorrect() to be applied to
-    DigitalGlobe images with the same parameters as for Planet.
-
-    Returns: unit16 array
-    """
-    percentile = 99
-    target_value = 1e4
-    coarsed = np.zeros(img.shape, dtype='uint16')
-    for n, band in enumerate(img.T):
-        cut = np.percentile(band[np.where(band > 0)], percentile)
-        coarsed.T[n] = ((band / cut) * target_value).astype('uint16')
-    return coarsed 
-
-
 # instantiations tuned to produce various output styles:
 
 STYLES = {
