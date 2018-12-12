@@ -85,6 +85,7 @@ import numpy as np
 from shapely import wkt
 import skimage.io
 import gbdxtools  # bug in geo libraries.  import this *after* shapely
+import rasterio # this too
 
 from postprocessing import color
 from postprocessing import gdal_routines
@@ -311,8 +312,9 @@ class DGImageGrabber(object):
                 except KeyError:
                     pass
             path = gdal_routines.reband(path, [1, 2, 3])
-                
-        img = color.coarse_adjust(skimage.io.imread(path))
+
+        path = expand_histogram(path)
+        img = skimage.io.imread(path)
         for style in styles:
             try:
                 output_paths.append(correct_and_write(img, path, style))
@@ -381,6 +383,41 @@ class DGImageGrabber(object):
                 record['properties']['catalogID'], 100 * intersect_frac))
         return wo
 
+def expand_histogram(geotiff, percentile=99, target_value=1e4):
+    """Convert to uint16 and do a rough bandwise histogram expansion.
+
+    The dtype kwarg to DG img.geotiff method functions only for Worldview
+    images. Across all sensors, allowing default dytpe, images come as 
+    float32 with a uint16-like value range or as uint16. I have observed pixel
+    values larger than 2**14, but not as of yet larger than 2**16,
+    and generally the histogram is concentrated in the first
+    twelve bits. Relative R-G-B weightings are not reproduced consistently
+    from image to image of the same scene.
+
+    This function does a rough histogram expansion, finding the pixel 
+    value at the given percentile for each band and resetting that to the 
+    target_value. This allows the routines in postprocessing.color to be 
+    applied with the same parameters to both DG and Planet Labs images.
+
+    Output: Overwrites an expanded, uint16 GeoTiff
+
+    Returns: Path to the GeoTiff
+    """
+    with rasterio.open(geotiff) as dataset:
+        profile = dataset.profile.copy()
+        img = dataset.read()
+        coarsed = np.zeros(img.shape, dtype='uint16')
+        for n, band in enumerate(img):
+            cut = np.percentile(band[np.where(band > 0)], percentile)
+            coarsed[n] = ((band / cut) * target_value).astype('uint16')
+            
+    profile['dtype'] = 'uint16'
+    profile['photometric'] = 'RGB'
+    with rasterio.open(geotiff, 'w', **profile) as f:
+        f.write(coarsed)
+        
+    return geotiff
+    
 # DG-specific formatting functions
 
 def _enforce_date_formatting(**specs):
