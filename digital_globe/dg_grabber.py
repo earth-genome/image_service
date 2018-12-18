@@ -83,12 +83,12 @@ import sys
 import dateutil
 import numpy as np
 from shapely import wkt
-import skimage.io
 import gbdxtools  # bug in geo libraries.  import this *after* shapely
 import rasterio # this too
 
 from postprocessing import color
 from postprocessing import gdal_routines
+from postprocessing import landcover
 from postprocessing import resample
 from utilities.geobox import geobox
 from utilities.geobox import projections
@@ -275,16 +275,12 @@ class DGImageGrabber(object):
         return cleaned
     
     def write_img(self, daskimg, file_prefix):
-        """Write a DG dask image to file.
-                              
-        Argument write_styles: From styles defined in postprocessing.color.  
-            If empty, a raw GeoTiff is written.
-                
-        Returns: Local paths to images.
-        """
+        """Read a DG dask image and apply color and landcover routines."""
         output_paths = []
-        styles = [style.lower() for style in self.specs['write_styles']]
-        indices = [index.lower() for index in self.specs['landcover_indices']]
+        styles = [style.lower() for style in self.specs['write_styles']
+                  if style in color.STYLES.keys()]
+        indices = [index.lower() for index in self.specs['landcover_indices']
+                   if index in landcover.INDICES]
 
         # grab the raw geotiff
         path = file_prefix + '.tif'
@@ -296,30 +292,17 @@ class DGImageGrabber(object):
         print('\nStaging at {}\n'.format(path), flush=True)
         daskimg.geotiff(path=path, bands=bands, **self.specs)
 
-        def correct_and_write(img, path, style):
-            """Correct color and write to file."""
-            corrected = color.STYLES[style](img)
-            outpath = path.split('.tif')[0] + '-' + style + '.png'
-            print('\nStaging at {}\n'.format(outpath), flush=True)
-            skimage.io.imsave(outpath, corrected)
-            return outpath
-
         if indices:
-            img = skimage.io.imread(path).astype('float32')
             for index in indices:
-                try:
-                    output_paths.append(correct_and_write(img, path, index))
-                except KeyError:
-                    pass
+                outpath = landcover.compute_index(path, index)
+                output_paths.append(outpath)
+
             path = gdal_routines.reband(path, [1, 2, 3])
 
         path = expand_histogram(path)
-        img = skimage.io.imread(path)
         for style in styles:
-            try:
-                output_paths.append(correct_and_write(img, path, style))
-            except KeyError:
-                pass
+            outpath = color.ColorCorrect(style=style)(path)
+            output_paths.append(outpath)
 
         if self.specs['thumbnails']:
             os.remove(path)

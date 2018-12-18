@@ -16,9 +16,8 @@
 	"GEOEYE01"
     ],
     "write_styles": [
-        "matte",
-	"contrast",
-	"desert"
+        "base",
+	"vibrant"
     ],
     "landcover_indices": [],
     "thumbnails": false,
