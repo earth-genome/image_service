@@ -47,10 +47,8 @@ ARGUMENTS = {
     'skip': 'Minimum number of days between images if N > 1',
     'clouds': 'Integer percentage cloud cover in range [0, 100]',
     'min_intersect': 'Float in range [0, 1.0]',
-    'write_styles': 'One or more of {}'.format(
-        set(color.STYLES.keys()).difference(landcover.INDICES.keys())),
-    'indices': 'One or more of {}'.format(
-        set(landcover.INDICES.keys())),
+    'write_styles': 'One or more of {}'.format(set(color.STYLES.keys())),
+    'indices': 'One or more of {}'.format(set(landcover.INDICES)),
     'pansharp_scale': 'For DG: max scale for pansharpened images (in km)',
     'image_source': 'For DG: one or more of {}'.format(
         set(KNOWN_IMAGE_SOURCES)),
@@ -313,9 +311,8 @@ def _parse_specs(args):
     if not set(specs['write_styles']) <= set(color.STYLES.keys()):
         raise ValueError('Supported write_styles are {}'.format(
             list(color.STYLES.keys())))
-    if not set(specs['landcover_indices']) <= set(landcover.INDICES.keys()):
-        raise ValueError('Supported indices are {}'.format(
-            list(landcover.INDICES.keys())))
+    if not set(specs['landcover_indices']) <= set(landcover.INDICES):
+        raise ValueError('Supported indices are {}'.format(landcover.INDICES))
     
     # override defaults to ensure availability of NIR band in this case:
     if specs['landcover_indices'] and not specs['item_types']:
