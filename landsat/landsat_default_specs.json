@@ -4,7 +4,7 @@
     "skip_days": 90,
     "min_skip": 30,
     "write_styles": [
-	"landsat_contrast"
+	"landsat"
     ],
     "thumbnails": false,
     "file_header": ""

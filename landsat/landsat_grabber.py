@@ -39,7 +39,7 @@ import os
 import aiohttp
 import dateutil
 import numpy as np
-import skimage.io
+import skimage
 
 from postprocessing import color
 from utilities.geobox import geobox
@@ -158,7 +158,7 @@ class LandsatThumbnails(object):
             'end': enddate
         }
         path = (self.specs['file_header'] +
-                ''.join(k+v for k,v in payload.items()) + '.png')
+                ''.join(k+v for k,v in payload.items()) + '.tif')
                 
         async with aiohttp.ClientSession() as session:
             async with session.get(self.app_url,
@@ -168,9 +168,11 @@ class LandsatThumbnails(object):
                 img_url = record.pop('url')
             async with session.get(img_url) as img_response:
                 bin_img = await img_response.read()
-                
-        with open(path, 'wb') as f:
-            f.write(bin_img)
+
+        # Save via skimage to get a 3-band PNG
+        img = skimage.io.imread(io.BytesIO(bin_img))
+        skimage.io.imsave(path, img)
+
         return path, record
 
     def color_process(self, path):
@@ -178,23 +180,13 @@ class LandsatThumbnails(object):
 
         Returns: Paths to color-corrected images.
         """
-        img = skimage.io.imread(path)
         output_paths = []
-        styles = [style.lower() for style in self.specs['write_styles']]
-
-        def correct_and_write(img, path, style):
-            """Correct color and write to file."""
-            corrected = color.STYLES[style](img)
-            outpath = path.split('.png')[0] + '-' + style + '.png'
-            print('\nStaging at {}\n'.format(outpath), flush=True)
-            skimage.io.imsave(outpath, corrected)
-            return outpath
+        styles = [style.lower() for style in self.specs['write_styles']
+                  if style in color.STYLES.keys()]
 
         for style in styles:
-            try:
-                output_paths.append(correct_and_write(img, path, style))
-            except KeyError:
-                pass
+            outpath = color.ColorCorrect(style=style)(path)
+            output_paths.append(outpath)
 
         if self.specs['thumbnails']:
             os.remove(path)

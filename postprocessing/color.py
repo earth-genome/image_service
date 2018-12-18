@@ -1,207 +1,236 @@
-"""Functions for automated basic color correction on an image.
-
-The three basic correction processes are embedded in the internal methods 
-    _expand_histogram: Linearly rescale histogram, so reference values
-        end at white and black.
-    _gamma_transform: Peform a nonlinear stretching of the image histogram.
-    _balance_color: Linearly rescale histogram for each color channel
-        separately.
-
-These functions are packaged into:
+"""Functions for automated color correction on an image.
 
 Class ColorCorrect:  Perform basic color correction on an image.
 
-Usage with default parameters:
-> cc = ColorCorrect()
-> corrected = cc.correct(image)  # returns uint8
+Usage with predefined style 'base': 
+> cc = ColorCorrect(style='base')
+> corrected = cc(image_file)  
 
-OR
+Use style 'base' but override saturation with a higher value:
+> cc = ColorCorrect(style='base', saturation=1.5)
+> corrected = cc(image_file) 
 
-> cc = ColorCorrect(return_ubyte=False)
-> corrected = cc.correct(image)  # returns image with input dtype
+See STYLES, below, for predefined styles and possible override paramters. 
 
-Or if color will be corrected later by hand:
-> cc = ColorCorrect()
-> corrected = cc.enhance_contrast(image)
-
-See STYLES, bottom, for instantiations tuned to produce different effects.
-
-Argument image:  numpy array of type uint16, uint8, or float32, with assumed
+Argument image_file: 3-band uint16, uint8, or float image, with assumed
     standard maximum values for images (65535, 255, or 1.0 respectively) 
-
-Additional external function:
-    coarse_adjust:  Convert to uint16 and do a rough histogram expansion.
-        (Ad hoc to DG to prepare DG geotiffs for ColorCorrect routines.)
-
-Usage from main, for Planet, yielding all possible STYLES
-(must be run from grab_imagery folder for imports):
-
-> python postprocessing/color.py planetimg.tif
-
-Usage from main, for DG (-c flag coarse-corrects and ensures proper dtype)
-> python postprocessing/color.py dgimg.tif -c 
         
 Notes:
 
-These routines were developed through experience of adjusting Planet, DigitalGlobe, and Landsat imagery by hand, using GIMP color curves. Scaling bright / dark points directly to percentiles on the image histogram leads to either (a) adjustments that tend toward posterization; or (b) adjustments based on histogram tails.  Therefore, the strategy is to find the (by default) (1, 99) percentiles as initial reference points and then step back by factor cut_frac.  I.e. instead of scaling the 1st percentile of the histogram to black, we find the pixel value of the first percentile, mutiply that value by cut_frac, and rescale the resulting pixel value to black. For one thing, this prevents over-saturating the image if there are no true blacks or whites in the scene.  
+These routines were developed through experience of adjusting Planet,
+DigitalGlobe, and Landsat imagery by hand. The coarse_adjust produces
+a minimally workable visual image from a Planet 'analytic' image or a
+DG geotiff. The coarse operations are threefold (each with tuneable parameters):
 
-To balance colors, it is important to operate with reference to the meat of the histogram, not out at the tail. Suppose red is relatively dark as compared to blue, but red has a longer bright tail.  A modest cut at the 99.9th percentile may end up brightening blue more than red.  Therefore, by default, we take the 95th percentile as initial reference and again step back by cut_frac.
+- The histogram is expanded linearly to fill more of the available bit range.
+- The histogram for each band is expanded linearly to rebalance colors.
+- Dark points for green and blue bands are adjusted as additional compensation
+  for atmospheric scatter.
 
-While _expand_histogram and _adjust_contrast can be inverted, roughly, by inverting the gamma transform and recompressing the histogram, the relative color blance cannot be reversed without knowing the initial color balance in the image, and therefore one may not want to apply _balance_color if color will be corrected later by hand.  This distinction is expressed in the difference between the correct() and brightness_and_contrast() methods.
+Scaling bright / dark points directly to percentiles on the image
+histogram either (a) tends towards posterization; or (b) bases adjustments
+on histogram tails.  Therefore, the strategy is to find the (by
+default) (5, 95) percentiles as initial reference points and then step
+back by factor cut_frac.  I.e. instead of scaling the 5th percentile
+of the histogram to black, we find the pixel value of the 5th
+percentile, mutiply that value by cut_frac, and rescale the resulting
+pixel value to black. For one thing, this prevents over-saturating the
+image if there are no true blacks or whites in the scene.
 
-Images that arrive with uint16 range are manipulated as such, to preserve
-frequency resolution, with the option (via correct_and_reduce) to convert to
-uint8 for a lossy data compression at the end.  If conversion to uint8
-happens before histogram expansion, in particular, the image can be effectively posterized with only O(10) distinct values in a band.
+To balance colors, it is important to operate with reference to the
+meat of the histogram, not out at the tail. Suppose red is relatively
+dark as compared to blue, but red has a longer bright tail.  A modest
+cut at the 99.9th percentile may end up brightening blue more than
+red.  Therefore, by default, we take the 5th, 95th percentile as initial
+reference and again step back by cut_frac. 
 
-Given the above, the percentiles should be fixed (except for special off-label use cases, cf. dra below). The tuneable parameters are the cut_frac and gamma.  Some reasonable examples are given in STYLES below.  For the same numerical variation from these values, cut_frac has a larger impact on contrast than gamma. Larger cut_frac means higher contrast, and typically should be set off with higher gamma (decreasing the gamma effect), and vice-versa.   
+Color tuning operations include: 
+
+- Gamma transform (brightens midtones)
+- Sigmoid transform (contrast enhancing and brightening)
+- Saturation adjustment
 
 """
+import copy
+import os
+import subprocess
 import sys
 
 import numpy as np
-import skimage
-import skimage.io
+import rasterio
 from skimage import exposure
 
-from postprocessing import landcover
+# Parameters that apply no correction:
+NULL_PARAMS = {
+    'percentiles': (5,95),
+    'cut_frac': 0,
+    'atmos_cut_fracs': {'green': 0, 'blue': 0},
+    'gamma': 1.0,
+    'sigmoid': {'amount': 1, 'bias': .5},
+    'saturation': 1.0
+}
 
+# Defaults for coarse correction:
+COARSE_PARAMS = {
+    'percentiles': (5,95),
+    'cut_frac': .65,
+    'atmos_cut_fracs': {'green': .2, 'blue': .3}
+}
 
-# For ColorCorrect class, a method decorator to return uint8 images,
-# activated by class attribute return_ubyte (True/False)
-
-def reduce_to_ubyte(fn):
-    """Decorate function to return unit8 images."""
-    def reduced(self, img):
-        img = fn(self, img)
-        if self.return_ubyte:
-            return skimage.img_as_ubyte(img)
-        else:
-            return img
-    return reduced
-
+# Predefined styles:
+STYLES = {
+    'base': {
+        'gamma': 1.5,
+        'sigmoid': {'amount': 5, 'bias': .275},
+        'saturation': 1.3,
+        **COARSE_PARAMS
+    },
+    'vibrant': {
+        'gamma': 1.5,
+        'saturation': 1.5,
+        'sigmoid': {'amount': 7, 'bias': .225},
+        **COARSE_PARAMS
+    },
+    'landsat': {
+        'percentiles': (5,95),
+        'cut_frac': .4,
+        'atmos_cut_fracs': {'green': .2, 'blue': .3},
+        'gamma': 1.3,
+        'sigmoid': {'amount': 1, 'bias': .5},
+        'saturation': 1.2
+    }
+}
+                 
 class ColorCorrect(object):
     """Perform basic color correction on an image.
 
+    Parameters for the color correction can be specified by providing
+    one of the above predefined styles and/or optionally overriding 
+    any specific parameter as a keyword argument to __init__. Parameters
+    default to NULL_PARAMS (no correction).  
+
     Attributes:
-        cut_frac: factor by which to shift reference pixel values before
-            applying cutoffs (see notes above)
-        gamma: gamma correction exponent
-        percentiles: high/low histogram reference points for determining
-            cutoffs
-        color_percentile: high reference point for an individual color band
-        return_ubyte: Bool.  If True, external methods return uint8 images.
+        cores: Integer number of processor cores to use, or -1 for all.  
+        style: One of the predefined style above or 'custom'
+        **params: Optional override params.
         
     External methods:
-        correct: Enhance contrast and balance colors.
-        enhance_contrast:  Enhance contrast.
-        linearly_enhance_contrast: Perform linear-only contrast stretching.
-        dra: Perform a band-wise linear histogram rescaling.
-        mincolor_correct: Enhance contrast and perform minimal (blue dark
-            point) color correction.
+        __call__: Run coarse and fine-tune color correction.
+        coarse_adjust: Produce an image from raw analytic satellite data.
+        tune: Tune colors.
     """
-        
-    def __init__(self,
-                 cut_frac=.75,
-                 gamma=.75,
-                 percentiles=(1,99),
-                 color_percentiles=(5,95),
-                 return_ubyte=True):
-        self.cut_frac = cut_frac
-        self.gamma = gamma
-        self.percentiles = percentiles
-        self.color_percentiles = color_percentiles
-        self.return_ubyte = return_ubyte
+    def __init__(self, cores=-1, style='custom', **params):
+        self.cores = cores
+        self.style = style
+        self.params = copy.deepcopy(STYLES.get(style, NULL_PARAMS))
+        self.params.update(**params)
 
-    @reduce_to_ubyte
-    def correct(self, img):
-        """Enhance contrast and balance colors."""
+    def __call__(self, path):
+        """Run coarse and fine-tune color correction."""
+        if self._check_coarse():
+            coarsed = self.coarse_adjust(path)
+            tuned = self.tune(coarsed)
+            os.remove(coarsed)
+        else:
+            tuned = self.tune(path)
+        return tuned
+
+    def _check_coarse(self):
+        """Check for affirmative coarse correction parameters."""
+        cut_fracs = [self.params.get('cut_frac'),
+                     *(self.params.get('atmos_cut_fracs', {}).values())]
+        return any(cut_fracs)
+
+    def coarse_adjust(self, path):
+        """Produce an image from raw analytic satellite data."""
+        with rasterio.open(path) as f:
+            profile = f.profile.copy()
+            img = f.read()
         img = self._expand_histogram(img)
-        img = self._gamma_transform(img)
         img = self._balance_colors(img)
-        return img
+        img = self._remove_atmos(img)
 
-    @reduce_to_ubyte
-    def enhance_contrast(self, img):
-        """Enhance contrast."""
-        img = self._expand_histogram(img)
-        img = self._gamma_transform(img)
-        return img
+        profile['photometric'] = 'RGB'
+        outpath = path.split('.tif')[0] + 'vis.tif'
+        with rasterio.open(outpath, 'w', **profile) as f:
+            f.write(img) 
+        return outpath
+
+    def tune(self, path):
+        """Tune colors."""
+        outpath = path.split('.tif')[0] + self.style + '.tif'
+        commands = [
+            'rio', 'color', '-j', str(self.cores),
+            path, outpath,
+            'gamma', 'RGB', str(self.params['gamma']),
+            'sigmoidal', 'RGB', *[str(v) for v in
+                                  self.params['sigmoid'].values()],
+            'saturation', str(self.params['saturation'])
+        ]
+        subprocess.call(commands)
+
+        # There seems to be a bug in the way rio color writes headers for
+        # uint16 files. They can still be read by skimage and rasterio but
+        # not Preview or Photoshop. Read/rewrite for a temporary fix:
+        with rasterio.open(outpath) as f:
+            img = f.read()
+            profile = f.profile.copy()
+        profile['photometric'] = 'RGB'
+        with rasterio.open(outpath, 'w', **profile) as f:
+            f.write(img)
+                
+        return outpath
     
-    @reduce_to_ubyte
-    def linearly_enhance_contrast(self, img):
-        """Perform linear-only contrast stretching."""
-        return self._expand_histogram(img)
-
-    @reduce_to_ubyte
-    def dra(self, img):
-        """Perform a band-wise linear histogram rescaling.
-
-        This routine reproduces DG DRA when:
-            self.cut_frac = 1
-            self.color_percentiles = (2,98)
-            
-        """
-        return self._balance_colors(img)
-
-    @reduce_to_ubyte
-    def mincolor_correct(self, img):
-        """Enhance contrast and perform minimal (blue dark point) color
-            correction.
-        """
-        img = self.enhance_contrast(img)
-        img = self._shift_blue_darkpoint(img)
-        return img
-
     def _expand_histogram(self, img):
         """Linearly rescale histogram."""
         lowcut, highcut = np.percentile(img[np.where(img > 0)],
-                                        self.percentiles)
+                                        self.params['percentiles'])
         highcut = self._renorm_highcut(highcut, img.dtype)
         lowcut = self._renorm_lowcut(lowcut)
         expanded = exposure.rescale_intensity(img, in_range=(lowcut, highcut))
         return expanded
-    
-    def _gamma_transform(self, img):
-        """Peform gamma adjustment."""
-        return exposure.adjust_gamma(img, gamma=self.gamma)
 
     def _balance_colors(self, img):
         """Linearly rescale histogram for each color channel separately."""
         balanced = np.zeros(img.shape, dtype=img.dtype)
-        for n, band in enumerate(img.T):
+        for n, band in enumerate(img):
             lowcut, highcut = np.percentile(band[np.where(band > 0)],
-                                            self.color_percentiles)
+                                            self.params['percentiles'])
             highcut = self._renorm_highcut(highcut, img.dtype)
             lowcut = self._renorm_lowcut(lowcut)
-            balanced.T[n] = exposure.rescale_intensity(
+            balanced[n] = exposure.rescale_intensity(
                 band, in_range=(lowcut, highcut))
         return balanced
 
-    def _shift_blue_darkpoint(self, img, lowcut_frac=.5):
-        """Shift the blue dark reference value only.
-
-        This is a minimal color correction to remove atmospheric scattering,
-            for scenes whose colors naturally are imbalanced (e.g. desert).
+    def _remove_atmos(self, img):
+        """Shift blue and green dark points to compensate for atmospheric
+            scattering.
         """
-        balanced = np.zeros(img.shape, dtype=img.dtype)
-        balanced.T[:2] = img.T[:2]
-        blue = img.T[2]
-        lowcut, _ = np.percentile(blue[np.where(blue > 0)],
-                                  self.color_percentiles)
-        lowcut *= lowcut_frac
-        balanced.T[2] = exposure.rescale_intensity(
-            blue, in_range=(lowcut, self._get_max(img.dtype)))
-        return balanced
-    
+        cleaned = img.copy()
+        green, blue = img[1:3]
+        
+        glowcut, _ = np.percentile(green[np.where(green > 0)],
+                                   self.params['percentiles'])
+        glowcut *= self.params['atmos_cut_fracs']['green']
+        blowcut, _ = np.percentile(blue[np.where(blue > 0)],
+                                   self.params['percentiles'])
+        blowcut *= self.params['atmos_cut_fracs']['blue']
+        
+        cleaned[1] = exposure.rescale_intensity(
+            green, in_range=(glowcut, self._get_max(img.dtype)))
+        cleaned[2] = exposure.rescale_intensity(
+            blue, in_range=(blowcut, self._get_max(img.dtype)))
+        
+        return cleaned
+
     def _renorm_lowcut(self, cut):
         """Shift cut toward zero."""
-        return cut * self.cut_frac
+        return cut * self.params['cut_frac']
 
     def _renorm_highcut(self, cut, datatype):
         """Shift cut toward img_max."""
         img_max = self._get_max(datatype)
-        shifted = img_max - self.cut_frac * (img_max - cut)
+        shifted = img_max - self.params['cut_frac'] * (img_max - cut)
         return shifted
 
     def _get_max(self, datatype):
@@ -216,39 +245,13 @@ class ColorCorrect(object):
             raise TypeError('Expecting dtype uint16, uint8 or float32.')
         return img_max
 
-# instantiations tuned to produce various output styles:
-
-STYLES = {
-    # default:
-    'contrast': ColorCorrect(cut_frac=.75, gamma=.75).correct,
-    # low contrast:
-    'matte': ColorCorrect(cut_frac=.65, gamma=.6).correct,
-    # reproduces DG DRA; oversaturated, very high contrast:
-    'dra': ColorCorrect(cut_frac=1, color_percentiles=(2,98)).dra,
-    # may perform well on scenes whose colors naturally are imbalanced:
-    'desert': ColorCorrect(cut_frac=.95).mincolor_correct,
-    # for another take on Planet 'visual':
-    'expanded': ColorCorrect(cut_frac=.75).linearly_enhance_contrast,
-    # for landsat retrieved from the earthrise-assets web app:
-    'landsat_contrast': ColorCorrect(
-        cut_frac=.75, gamma=.75, return_ubyte=False).enhance_contrast
-}
-
-# common remote sensing landcover indices (ndvi, ndwi...)
-STYLES.update(landcover.INDICES)
-
 if __name__ == '__main__':
-    usage_msg = ('Usage: python color.py image.tif [-c]\n' +
-                 'The -c flag indicates a preliminary coarse adjust for ' +
-                 'DigitalGlobe GeoTiffs.  The flag must follow the filename.')
+    usage_msg = ('Usage: python color.py image.tif')
     try:
         filename = sys.argv[1]
-        img = skimage.io.imread(sys.argv[1])
     except (IndexError, FileNotFoundError) as e:
         sys.exit('{}\n{}'.format(repr(e), usage_msg))
-    if '-c' in sys.argv:
-        img = coarse_adjust(img)
-    for style, operator in STYLES.items():
-        corrected = operator(img)
-        skimage.io.imsave(filename.split('.')[0] + style + '.png', corrected)
+    ColorCorrect(cores=1, style='base')(filename)
+    
+
 

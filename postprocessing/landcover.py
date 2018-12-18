@@ -9,24 +9,37 @@ $ python landcover.py -h
 import argparse
 import sys
 
-import skimage.io
+import rasterio
 
-def ndvi(img):
-    """Compute ndvi on four-band img."""
-    r, g, b, nir = img.T
-    ndvi = (nir - r)/(nir + r)
-    return ndvi.T
+INDICES = ['ndvi', 'ndwi']
 
-def ndwi(img):
-    r, g, b, nir = img.T
-    ndwi = (g - nir)/(g + nir)
-    return ndwi.T
+def compute_index(path, index):
+    """Compute a landcover index on a four-band GeoTiff.
 
-INDICES = {
-    'ndvi': ndvi,
-    'ndwi': ndwi
-}
+    Arguments: 
+        path: Path to a GeoTiff with bands ordered R-G-B-NIR
+        index: One of the available INDICES above
     
+    Returns: Path to a grayscale GeoTiff
+    """
+    with rasterio.open(path) as f:
+        img = f.read().astype('float32')
+        profile = f.profile.copy()
+    red, green, blue, nir = img
+
+    if index == 'ndvi':
+        computed = (nir - red)/(nir + red)
+    elif index == 'ndwi':
+        computed = (green - nir)/(green + nir)
+    else:
+        raise ValueError('Landcover index not recognized.')
+
+    profile.update({'count': 1, 'dtype': rasterio.float32})
+    outfile = path.split('.tif')[0] + index + '.tif'
+    with rasterio.open(outfile, 'w', **profile) as f:
+        f.write(computed, 1)
+    return outfile
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='Compute common remote sensing indices.'
@@ -39,16 +52,9 @@ if __name__ == '__main__':
     parser.add_argument(
         'index_name',
         type=str,
-        help='Index type from {}'.format(list(INDICES.keys()))
+        choices=INDICES,
+        help='Index type from {}'.format(INDICES)
     )
     args = parser.parse_args()
-    img = skimage.io.imread(args.filename).astype('float32')
-    if args.index_name.lower() == 'ndvi':
-        index = ndvi(img)
-    elif args.index_name.lower() == 'ndwi':
-        index = ndwi(img)
-    else:
-        sys.exit('Supported indices: {}'.format(list(INDICES.keys())))
-    outfile = args.filename.split('.tif')[0] + '-' + args.index_name + '.png'
-    skimage.io.imsave(outfile, index)
+    compute_index(args.filename, args.index_name)
         
