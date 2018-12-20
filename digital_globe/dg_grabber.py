@@ -366,7 +366,7 @@ class DGImageGrabber(object):
                 record['properties']['catalogID'], 100 * intersect_frac))
         return wo
 
-def expand_histogram(geotiff, percentile=99, target_value=1e4):
+def expand_histogram(geotiff, percentile=97, target_value=8e3):
     """Convert to uint16 and do a rough bandwise histogram expansion.
 
     The dtype kwarg to DG img.geotiff method functions only for Worldview
