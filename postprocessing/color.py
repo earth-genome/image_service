@@ -74,21 +74,21 @@ NULL_PARAMS = {
 COARSE_PARAMS = {
     'percentiles': (5,95),
     'cut_frac': .65,
-    'atmos_cut_fracs': {'green': .2, 'blue': .3}
+    'atmos_cut_fracs': {'green': .3, 'blue': .45}
 }
 
 # Predefined styles:
 STYLES = {
     'base': {
-        'gamma': 1.5,
-        'sigmoid': {'amount': 5, 'bias': .275},
+        'gamma': 1.3,
+        'sigmoid': {'amount': 5, 'bias': .2},
         'saturation': 1.3,
         **COARSE_PARAMS
     },
     'vibrant': {
-        'gamma': 1.5,
+        'gamma': 1.3,
         'saturation': 1.5,
-        'sigmoid': {'amount': 7, 'bias': .225},
+        'sigmoid': {'amount': 6, 'bias': .15},
         **COARSE_PARAMS
     },
     'landsat': {
@@ -252,6 +252,5 @@ if __name__ == '__main__':
     except (IndexError, FileNotFoundError) as e:
         sys.exit('{}\n{}'.format(repr(e), usage_msg))
     ColorCorrect(cores=1, style='base')(filename)
-    
 
 
