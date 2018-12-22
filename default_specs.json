@@ -1,5 +1,33 @@
 {
-    "max_size": {
-        "landsat": 280.0
-    }
+    "clouds": 10,
+    "min_intersect": 0.9,
+    "startDate": "2008-09-01T00:00:00.0000Z",
+    "endDate": null,
+    "N_images": 1,
+    "skip_days": 0,
+    "write_styles": [
+        "base",
+	"vibrant"
+    ],
+    "landcover_indices": [],
+    "thumbnails": false,
+    "file_header": "",
+    "offNadirAngle": null,
+    "band_type": "MS",
+    "pansharp_scale": 2.5,
+    "acomp": false,
+    "override_proj": null,
+    "image_source": [
+	"WORLDVIEW02",
+	"WORLDVIEW03_VNIR",
+	"GEOEYE01"
+    ],
+    "item_types": [
+	"PSScene3Band",
+	"PSOrthoTile",
+	"REOrthoTile"
+    ],
+    "asset_types": [
+	"analytic"
+    ]
 }
