@@ -28,7 +28,7 @@ DG-relevant default specs take form:
     ],
     "landcover_indices": [],
     "thumbnails": false,
-    "file_header": ""
+    "file_header": "",
     "offNadirAngle": null,   # (relation, angle), e.g. ('<', 10)
     "band_type": "MS",  # mulit-spectral
     "pansharp_scale": 2.5,  # in km; used by _patch_geometric_specs(),

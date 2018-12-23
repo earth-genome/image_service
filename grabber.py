@@ -33,13 +33,13 @@ class ImageGrabber(ABC):
     Template external methods:
         __call__: Scheduling wrapper for async execution of pull()
         async pull: Pull the most recent images consistent with specs.
-        async pull_by_id:  Grab and write image for a known catalogID.
+        async pull_by_id:  Pull and write image for a known catalogID.
         prep_scenes: Search and group search records into scenes.
-        grab_scene: Activate, download, and process scene assets.
+        async grab_scene: Activate, download, and process scene assets.
         search_clean: Search and return streamlined image records.
         search_latlon_clean:  Search and return streamlined image records.
         search_id_clean: Retrieve record for input catalogID.
-        produce: Convert a raw GeoTiff into visual and data products.
+        photoshop: Convert a raw GeoTiff into visual and data products.
     """
 
     def __init__(self, client, specs_filename=SPECS_FILE, **specs):
@@ -66,19 +66,24 @@ class ImageGrabber(ABC):
         """
         scenes = self.prep_scenes(bbox)
         grab_tasks = [self.grab_scene(bbox, scene) for scene in scenes]
-
         results = await asyncio.gather(*grab_tasks, return_exceptions=True)
         return results
 
-    # WIP
     async def pull_by_id(self, bbox, catalogID, *args):
-        pass
+        """Pull and write image for a known catalogID."""
+        records = [self._search_id(catalogID, *args)]
+        try: 
+            scene = next(iter(self._compile_scenes(bbox, records)))
+        except StopIteration:
+            return {}
+        record = await self.grab_scene(bbox, scene)
+        return record
         
     async def grab_scene(self, bbox, scene):
         """Activate, download, and process scene assets."""
         paths = await self._download(bbox, scene)
         merged_path, record = self._mosaic(bbox, paths, scene)
-        output_paths = self.produce(merged_path)
+        output_paths = self.photoshop(merged_path)
         if self.specs['thumbnails']:
             resample.make_thumbnails(output_paths)
         record.update({'paths': output_paths})
@@ -193,7 +198,7 @@ class ImageGrabber(ABC):
         record = self._clean_record(next(iter(records)))
         return merged, record
 
-    def produce(self, path):
+    def photoshop(self, path):
         """Convert a raw GeoTiff into visual and data products."""
         output_paths = []
         if self.specs['landcover_indices']:
