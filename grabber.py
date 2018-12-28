@@ -9,6 +9,7 @@ dg_grabber.DGImageGrabber and planet_grabber.PlanetGrabber.
 from abc import ABC, abstractmethod
 import asyncio
 import datetime
+from itertools import islice
 import json
 import os
 
@@ -70,7 +71,10 @@ class ImageGrabber(ABC):
         return results
 
     async def pull_by_id(self, bbox, catalogID, *args):
-        """Pull and write image for a known catalogID."""
+        """Pull and write image for a known catalogID.
+
+        Argument *args: For Planet, an item_type
+        """
         records = [self._search_id(catalogID, *args)]
         try: 
             scene = next(iter(self._compile_scenes(bbox, records)))
@@ -97,7 +101,7 @@ class ImageGrabber(ABC):
 
         Returns: List of lists of records.  
         """
-        records = self._search(bbox)[::-1]
+        records = self._search(bbox)
         scenes = self._compile_scenes(bbox, records)
         return scenes
     
@@ -120,73 +124,67 @@ class ImageGrabber(ABC):
     def search_clean(self, bbox, max_records=None):
         """Search the catalog and return streamlined records."""
         records = self._search(bbox)
-        return [self._clean_record(r) for r in records[:max_records]]
-
+        return [self._clean(r) for r in islice(records, max_records)]
+    
     def search_latlon_clean(self, lat, lon, max_records=None):
         """Search the catalog and return streamlined records."""
         records = self._search_latlon(lat, lon)
-        return [self._clean_record(r) for r in records[:max_records]]
+        return [self._clean(r) for r in islice(records, max_records)]
 
     def search_id_clean(self, catalogID, *args):
         """Retrieve record for input catalogID."""
         record = self._search_id(catalogID, *args)
-        return self._clean_record(record)
+        return self._clean(record)
 
     @abstractmethod
-    def _clean_record(self):
+    def _clean(self, record):
+        """Streamline image record."""
         pass
-    
+        
     @abstractmethod
     def _compile_scenes(self):
         pass
 
-    def _well_overlapped(self, bbox, records):
-        """Check whether records meet specs for overlap with bbox."""
-        intersection = bbox.intersection(self._footprint(records))
-        fraction = intersection.area/bbox.area
-        well_o = (fraction >= self.specs['min_intersect'])
-        if not well_o:
-            print('Rejecting scene. Overlap with bbox {:.1%}'.format(fraction))
-        return well_o
+    def _get_overlap(self, bbox, records):
+        """Find geographic intersection between bbox and records.
 
-    def _footprint(self, records):
+        Returns: A Shapely shape and fractional area relative to bbox."""
         footprints = [self._read_footprint(r) for r in records]
-        return shapely.ops.cascaded_union(footprints)
+        overlap = bbox.intersection(shapely.ops.cascaded_union(footprints))
+        return overlap, overlap.area/bbox.area
+
+    def _well_overlapped(self, frac_area, IDs):
+        """Check whether fractional area meets specs."""
+        well_o = (frac_area >= self.specs['min_intersect'])
+        if not well_o:
+            print('Rejecting scene {}. Overlap with bbox {:.1%}'.format(
+                IDs, frac_area))
+        return well_o
 
     @abstractmethod
     def _read_footprint(self):
         pass
 
     def _fastforward(self, records, date):
-        """Pop records until all are older than date by specs['skip_days']
+        """Advance to a record older than date by self.specs['skip_days'].
 
         Arguments:
-            records: Image records sorted by date
-            date: Reference date to work back from
+            records: Image record iterator
+            date: Reference datetime.date object
 
-        Output: Records are popped from input variable records.
-
-        Returns: None
+        Returns: An image record, or None
         """
-        target_date = date - datetime.timedelta(days=self.specs['skip_days'])
-        while records:
-            record = records.pop()
-            date_aq = dateutil.parser.parse(
-                record['properties']['acquired']).date()
-            if date_aq <= target_date:
-                records.append(record) # replace this record
-                break
-        return 
+        for record in records:
+            cleaned = self._clean(record)
+            date_aq = dateutil.parser.parse(cleaned['timestamp']).date()
+            if (date - date_aq).days > self.specs['skip_days']:
+                return record
 
-    
+        
     # Scene activation and download
 
     @abstractmethod
     def _download(self):
-        pass
-
-    @abstractmethod
-    def _get_bandmap(self):
         pass
 
         
@@ -195,7 +193,7 @@ class ImageGrabber(ABC):
     def _mosaic(self, bbox, paths, records):
         """Assemble assets to geographic specs."""
         merged = next(iter(paths))
-        record = self._clean_record(next(iter(records)))
+        record = self._clean(next(iter(records)))
         return merged, record
 
     def photoshop(self, path):
