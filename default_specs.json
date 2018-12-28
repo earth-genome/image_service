@@ -27,7 +27,5 @@
 	"PSOrthoTile",
 	"REOrthoTile"
     ],
-    "asset_types": [
-	"analytic"
-    ]
+    "asset_type": "analytic"
 }

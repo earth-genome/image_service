@@ -89,7 +89,6 @@ class DGImageGrabber(grabber.ImageGrabber):
         self._enforce_date_format()
         self._search_filters = self._build_search_filters()
 
-
     # Initializations to DG requirments:
     
     def _build_search_filters(self):
@@ -119,20 +118,23 @@ class DGImageGrabber(grabber.ImageGrabber):
     # Search and scene preparation.
     
     def _search(self, bbox):
-        """Search the catalog for relevant imagery."""
+        """Search the catalog for relevant imagery.
+
+        Returns: An iterator over image records.
+        """
         records = self.client.search(
             searchAreaWkt=bbox.wkt, filters=self._search_filters,
             startDate=self.specs['startDate'],
             endDate=self.specs['endDate'])
         records.sort(key=lambda r: r['properties']['timestamp'], reverse=True)
         print('Search found {} records.'.format(len(records)), flush=True) 
-        return records
+        return iter(records)
 
     def _search_id(self, catalogID, *args):
         """Retrieve record for input catalogID."""
         return self.client.get(catalogID)
             
-    def _clean_record(self, record):
+    def _clean(self, record):
         """Streamline image record."""
         keymap = {  
             'vendor': 'provider',
@@ -141,11 +143,12 @@ class DGImageGrabber(grabber.ImageGrabber):
             'timestamp': 'timestamp',
             'cloudCover': 'clouds',
             'panResolution': 'resolution',
-            'browseURL': 'thumbnail'
+            'browseURL': 'thumbnail',
+            'geometry': 'footprintWkt'
         }
         cleaned = {keymap[k]:v for k,v in record['properties'].items()
                    if k in keymap.keys()}
-        return cleaned   
+        return cleaned
 
     def _compile_scenes(self, bbox, records):
         """Retrieve dask images from the catalog.
@@ -161,14 +164,14 @@ class DGImageGrabber(grabber.ImageGrabber):
         Returns: A list of lists, each containing one record.
         """
         self._patch_geometric_specs(bbox)
-        retrieved = []
-        while len(records) > 0 and len(retrieved) < self.specs['N_images']:
-            rec = records.pop()
-            if not self._well_overlapped(bbox, [rec]):
+        scenes = []
+        record = next(records, None)
+        while record and len(scenes) < self.specs['N_images']:
+            ID, date = record['identifier'], record['properties']['timestamp']
+            overlap, frac_area = self._get_overlap(bbox, [record])
+            if not self._well_overlapped(frac_area, [ID]):
                 continue
-            ID, props = rec['identifier'], rec['properties']
-            print('Trying ID {}:\n {}, {}'.format(
-                ID, props['timestamp'], props['sensorPlatformName']))
+            print('Trying ID {}: {}'.format(ID, date))
             try:
                 daskimg = gbdxtools.CatalogImage(ID, **self.specs)
                 print('Retrieved ID {}'.format(ID))
@@ -176,17 +179,18 @@ class DGImageGrabber(grabber.ImageGrabber):
                 print('Exception: {}'.format(e))
                 continue
 
-            overlap = bbox.intersection(self._read_footprint(rec))
-            rec.update({'daskimg': daskimg.aoi(bbox=overlap.bounds)})
-            retrieved.append([rec])
+            record.update({'daskimg': daskimg.aoi(bbox=overlap.bounds)})
+            scenes.append([record])
             
-            if self.specs['skip_days']:
-                date = dateutil.parser.parse(props['timestamp']).date()
-                self._fastforward(records, date)
+            if self.specs.get('skip_days'):
+                record = self._fastforward(
+                    records, dateutil.parser.parse(date).date())
+            else: 
+                record = next(records)
 
         print('Found {} images of {} requested.'.format(
-            len(retrieved), self.specs['N_images']), flush=True)
-        return retrieved
+            len(scenes), self.specs['N_images']), flush=True)
+        return scenes
 
     def _patch_geometric_specs(self, bbox):
         """Determine pansharpening and geoprojection."""
@@ -205,9 +209,10 @@ class DGImageGrabber(grabber.ImageGrabber):
         return True if size < self.specs['pansharp_scale'] else False
     
     def _read_footprint(self, record):
+        """Extract footprint in record as a shapely shape."""  
         return shapely.wkt.loads(record['properties']['footprintWkt'])
 
-
+            
     # Scene download
 
     async def _download(self, bbox, scene):
@@ -219,7 +224,7 @@ class DGImageGrabber(grabber.ImageGrabber):
         """
         record = next(iter(scene))
         daskimg = record['daskimg']
-        bands = self._get_bandmap(daskimg.shape[0])
+        bands = self._bandmap(daskimg.shape[0])
         if not self.specs['landcover_indices']:
             bands = bands[:3]
 
@@ -229,7 +234,7 @@ class DGImageGrabber(grabber.ImageGrabber):
         path = expand_histogram(path)
         return [path]
 
-    def _get_bandmap(self, n_bands):
+    def _bandmap(self, n_bands):
         """Retrieve the band ordering for R-G-B-NIR bands."""
         bandmaps = {
             '4': [2, 1, 0, 3],
