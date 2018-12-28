@@ -66,7 +66,7 @@ class ImageGrabber(ABC):
         Returns: List of image records along with any exceptions
         """
         scenes = self.prep_scenes(bbox)
-        grab_tasks = [self.grab_scene(bbox, scene) for scene in scenes]
+        grab_tasks = [self.grab_scene(scene, bbox) for scene in scenes]
         results = await asyncio.gather(*grab_tasks, return_exceptions=True)
         return results
 
@@ -83,10 +83,10 @@ class ImageGrabber(ABC):
         record = await self.grab_scene(bbox, scene)
         return record
         
-    async def grab_scene(self, bbox, scene):
+    async def grab_scene(self, scene, bbox):
         """Activate, download, and process scene assets."""
-        paths = await self._download(bbox, scene)
-        merged_path, record = self._mosaic(bbox, paths, scene)
+        paths = await self._download(scene, bbox)
+        merged_path, record = self._mosaic(paths, scene, bbox)
         output_paths = self.photoshop(merged_path)
         if self.specs['thumbnails']:
             resample.make_thumbnails(output_paths)
@@ -102,7 +102,7 @@ class ImageGrabber(ABC):
         Returns: List of lists of records.  
         """
         records = self._search(bbox)
-        scenes = self._compile_scenes(bbox, records)
+        scenes = self._compile_scenes(records, bbox)
         return scenes
     
     @abstractmethod   
@@ -113,12 +113,12 @@ class ImageGrabber(ABC):
     def _search_id(self):
         pass
 
-    def _search_latlon(self, lat, lon, eps=.001):
+    def _search_latlon(self, lat, lon, epsilon=.001):
         """Search catalog for images containing lat, lon.
 
-        Argument eps: Scale in km for a small box around lat, lon.
+        Argument epsilon: Scale in km for a small box around lat, lon.
         """
-        minibox = geobox.bbox_from_scale(lat, lon, eps)
+        minibox = geobox.bbox_from_scale(lat, lon, epsilon)
         return self._search(minibox)
     
     def search_clean(self, bbox, max_records=None):
@@ -145,16 +145,24 @@ class ImageGrabber(ABC):
     def _compile_scenes(self):
         pass
 
-    def _get_overlap(self, bbox, records):
+    def _get_overlap(self, bbox, *records):
         """Find geographic intersection between bbox and records.
 
-        Returns: A Shapely shape and fractional area relative to bbox."""
+        Returns: A Shapely shape and fractional area relative to bbox.
+        """
         footprints = [self._read_footprint(r) for r in records]
         overlap = bbox.intersection(shapely.ops.cascaded_union(footprints))
         return overlap, overlap.area/bbox.area
 
-    def _well_overlapped(self, frac_area, IDs):
-        """Check whether fractional area meets specs."""
+    def _well_overlapped(self, frac_area, *IDs):
+        """Check whether fractional area meets specs.
+        
+        Arguments:
+            frac_area: Fractional area of overlap relative to bbox
+            *IDs: Optional scene identifiers for informational print
+            
+        Returns: Boolean 
+        """
         well_o = (frac_area >= self.specs['min_intersect'])
         if not well_o:
             print('Rejecting scene {}. Overlap with bbox {:.1%}'.format(
@@ -190,8 +198,11 @@ class ImageGrabber(ABC):
         
     # Reprocessing
 
-    def _mosaic(self, bbox, paths, records):
-        """Assemble assets to geographic specs."""
+    def _mosaic(self, paths, records, bbox):
+        """Assemble assets to geographic specs.
+
+        Simplest case is handled here - when there is one path, one record.
+        """
         merged = next(iter(paths))
         record = self._clean(next(iter(records)))
         return merged, record
