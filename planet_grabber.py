@@ -19,8 +19,8 @@ records) required to produce one final image of the bounding box.  A call
 will attempt to produce N_images such scenes.  
 
 Catalog and image specs have defaults set in default_specs.json, and can be 
-overriden by passing **kwargs to DGImageGrabber. As of writing, the
-DG-relevant default specs take form:
+overriden by passing **kwargs to PlanetGrabber. As of writing, the
+Planet-relevant default specs take form:
 {
     "clouds": 10,   # maximum allowed percentage cloud cover
     "min_intersect": 0.9,  # min fractional overlap between bbox and scene
@@ -40,9 +40,7 @@ DG-relevant default specs take form:
 	    "PSOrthoTile",
 	    "REOrthoTile"
     ],
-    "asset_types": [
-	    "analytic"
-    ]
+    "asset_type": "analytic"
 }
 
 """
@@ -65,6 +63,43 @@ KNOWN_ASSET_TYPES = ['analytic', 'ortho_visual', 'visual']
 WAITTIME = 10
 TIMEOUT = 1800
 
+# Planet band numbers for R-G-B-NIR bands:
+BANDMAP = {   
+    'PSScene3Band': {
+        'visual': [1, 2, 3],
+        'analytic': [1, 2, 3]
+    },
+    'PSScene4Band': {
+        'analytic': [3, 2, 1, 4]
+    },
+    'PSOrthoTile': {
+        'visual': [1, 2, 3],
+        'analytic': [3, 2, 1, 4]
+    },
+    'REOrthoTile': {
+        'visual': [1, 2, 3],
+        'analytic': [3, 2, 1, 5]
+    },
+    'SkySatScene': {
+        'ortho_visual': [3, 2, 1],
+        'analytic': [3, 2, 1, 4]
+    }
+}
+
+# To standardize image records:
+KEYMAP = {  
+    'provider': 'provider',
+    'item_type': 'item_type',
+    'asset_type': 'asset_type',
+    'acquired': 'timestamp',
+    'cloud_cover': 'clouds',
+    'pixel_resolution': 'resolution',
+    'gsd': 'gsd',
+    'epsg_code': 'epsg_code',
+    'satellite_id': 'satellite_id'
+}
+
+
 class PlanetGrabber(grabber.ImageGrabber):
     """Tool to pull Planet Labs imagery.
 
@@ -73,7 +108,11 @@ class PlanetGrabber(grabber.ImageGrabber):
     
     def __init__(self, client=api.ClientV1(), **specs):
         super().__init__(client, **specs)
+        self._validate_landcover_specs()
         self._search_filters = self._build_search_filters()
+        self._bandmap = {k:v[self.specs['asset_type']]
+                             for k,v in BANDMAP.items()}
+        self._keymap = KEYMAP.copy()
 
     # Initializations to Planet requirements
 
@@ -89,6 +128,18 @@ class PlanetGrabber(grabber.ImageGrabber):
                                              lt=self.specs['endDate']))
         return sf
 
+    def _validate_landcover_specs(self):
+        """Adjust item and asset types as needed for landcover indices."""
+        if self.specs['landcover_indices']:
+            if self.specs['asset_type'] != 'analytic':
+                print('Achtung: Changing asset type to analytic, as required '
+                      'for landcover indices.')
+                self.specs['asset_type'] = 'analytic'
+            if 'PSScene3Band' in self.specs['item_types']:
+                self.specs['item_types'].remove('PSScene3Band')
+                if 'PSScene4Band' not in self.specs['item_types']:
+                    self.specs['item_types'].append('PSScene4Band')
+            
 
     # Search and scene preparation.
 
@@ -112,26 +163,15 @@ class PlanetGrabber(grabber.ImageGrabber):
 
     def _clean(self, record):
         """Streamline image record."""
-        keymap = {  
-            'provider': 'provider',
-            'item_type': 'item_type',
-            'asset_type': 'asset_type',
-            'acquired': 'timestamp',
-            'cloud_cover': 'clouds',
-            'pixel_resolution': 'resolution',
-            'gsd': 'gsd',
-            'epsg_code': 'epsg_code',
-            'satellite_id': 'satellite_id'
-        }
         cleaned = {'catalogID': record['id']}
         cleaned.update({'thumbnail': record['_links']['thumbnail']})
         cleaned.update({'full_record': record['_links']['_self']})
-        cleaned.update({keymap[k]:v for k,v in record['properties'].items()
-            if k in keymap.keys()})
+        cleaned.update({self._keymap[k]:v for k,v
+            in record['properties'].items() if k in self._keymap.keys()})
         cleaned['clouds'] *= 100
         return cleaned
 
-    def _compile_scenes(self, bbox, records):
+    def _compile_scenes(self, records, bbox):
         """Find groups of overlapping, same-day images. 
 
         Returns:  List of lists of records
@@ -144,8 +184,8 @@ class PlanetGrabber(grabber.ImageGrabber):
             grouped_records = self._filter_copies(groups)
             for scene in grouped_records:
                 scenes.append(scene)
-                if (self.specs.get('skip_days')
-                        or len(scenes) >= self.specs['N_images']):
+                if (self.specs.get('skip_days') or
+                        len(scenes) >= self.specs['N_images']):
                     break
         return scenes
 
@@ -187,8 +227,8 @@ class PlanetGrabber(grabber.ImageGrabber):
         """Exclude groups that don't overlap sufficiently with bbox."""
         filtered = {}
         for key, records in groups.items():
-            _, frac_area = self._get_overlap(bbox, records)
-            if self._well_overlapped(frac_area, [r['id'] for r in records]):
+            _, frac_area = self._get_overlap(bbox, *records)
+            if self._well_overlapped(frac_area, *[r['id'] for r in records]):
                 filtered.update({key: records})
         return filtered
 
@@ -214,12 +254,8 @@ class PlanetGrabber(grabber.ImageGrabber):
     
     # Scene activation and download
     
-    async def _download(self, bbox, scene):
+    async def _download(self, scene, *args):
         """Retrieve assets for records in scene.
-
-        Arguments:
-            scene: List of records
-            bbox: Placeholder here to comply with abstract base class.
 
         Returns: List of paths to downloaded raw images.
         """
@@ -239,8 +275,8 @@ class PlanetGrabber(grabber.ImageGrabber):
         assets = self.client.get_assets_by_id(item_type, catalogID).get()
         asset = assets[self.specs['asset_type']]
         self.client.activate(asset)
-        print('Activating {}. This could take several minutes'.format(
-            catalogID), flush=True)
+        print('Activating {}. '.format(catalogID) +
+            'This could take several minutes.', flush=True)
         while not self._is_active(asset):
             await asyncio.sleep(WAITTIME)
             assets = self.client.get_assets_by_id(item_type, catalogID).get()
@@ -252,7 +288,7 @@ class PlanetGrabber(grabber.ImageGrabber):
         return True if asset['status'] == 'active' else False
             
     def _write(self, asset):
-        """Download an asset and write to disk."""
+        """Download the image data and write to disk."""
         body = self.client.download(asset).get_body()
         path = self.specs['file_header'] + body.name
         print('\nStaging at {}\n'.format(path), flush=True)
@@ -262,7 +298,7 @@ class PlanetGrabber(grabber.ImageGrabber):
 
     # Reprocessing
     
-    def _mosaic(self, bbox, paths, records):
+    def _mosaic(self, paths, records, bbox):
         """Assemble assets to geographic specs.
 
         Returns: Scene image path and cleaned, combined record.
@@ -274,15 +310,15 @@ class PlanetGrabber(grabber.ImageGrabber):
         if target_epsg_code:
             paths = self._reproject(paths, records, target_epsg_code)
 
-        footprint, _ = self._get_overlap(bbox, records)
-        bands = self._bandmap(central_record['properties']['item_type'])
+        footprint, _ = self._get_overlap(bbox, *records)
+        bands = self._bandmap[central_record['properties']['item_type']]
         if not self.specs['landcover_indices']:
             bands = bands[:3]
         paths = [gdal_routines.crop_and_reband(path, footprint, bands) 
                      for path in paths]
                 
         scene_path = gdal_routines.merge(paths)
-        scene_record = _merge_records([self._clean(r) for r in records])
+        scene_record = self._merge_records([self._clean(r) for r in records])
         return scene_path, scene_record
 
     def _reorder(self, paths, records):
@@ -297,7 +333,7 @@ class PlanetGrabber(grabber.ImageGrabber):
     def _sort_by_overlap(self, bbox, records):
         """Sort records in group by overlap with bbox (large to small)."""
         recs_sorted = sorted(
-            records, key=lambda rec: self._get_overlap(bbox, [rec])[1],
+            records, key=lambda rec: self._get_overlap(bbox, rec)[1],
             reverse=True)
         return recs_sorted
 
@@ -314,31 +350,6 @@ class PlanetGrabber(grabber.ImageGrabber):
                 path = gdal_routines.reproject(path, target_epsg_code)
             reprojected.append(path)
         return reprojected
-    
-    def _bandmap(self, item_type):
-        """Find the band order for R-G-B-NIR bands."""
-        bandmaps = {   
-            'PSScene3Band': {
-                'visual': [1, 2, 3],
-                'analytic': [1, 2, 3]
-            },
-            'PSScene4Band': {
-                'analytic': [3, 2, 1, 4]
-            },
-            'PSOrthoTile': {
-                'visual': [1, 2, 3],
-                'analytic': [3, 2, 1, 4]
-            },
-            'REOrthoTile': {
-                'visual': [1, 2, 3],
-                'analytic': [3, 2, 1, 5]
-            },
-            'SkySatScene': {
-                'ortho_visual': [3, 2, 1],
-                'analytic': [3, 2, 1, 4]
-            }
-        }
-        return bandmaps[item_type][self.specs['asset_type']]
     
     def _merge_records(self, records):
         """Combine records for all images in a scene."""

@@ -78,6 +78,24 @@ from utilities.geobox import projections
 KNOWN_IMAGE_SOURCES = ['WORLDVIEW02', 'WORLDVIEW03_VNIR', 'GEOEYE01',
                       'QUICKBIRD02', 'IKONOS']
 
+# DG band numbers for R-G-B-NIR bands. Keys are the total number of bands.
+BANDMAP = {
+    '4': [2, 1, 0, 3],
+    '8': [4, 2, 1, 6]
+}
+
+# To standardize image records:
+KEYMAP = {  
+    'vendor': 'provider',
+    'sensorPlatformName': 'sensor',
+    'catalogID': 'catalogID',
+    'timestamp': 'timestamp',
+    'cloudCover': 'clouds',
+    'panResolution': 'resolution',
+    'browseURL': 'thumbnail',
+    'geometry': 'footprintWkt'
+}
+    
 class DGImageGrabber(grabber.ImageGrabber):
     """Tool to pull DigitalGlobe imagery.
 
@@ -88,19 +106,10 @@ class DGImageGrabber(grabber.ImageGrabber):
         super().__init__(client, **specs)
         self._enforce_date_format()
         self._search_filters = self._build_search_filters()
+        self._bandmap = BANDMAP.copy()
+        self._keymap = KEYMAP.copy()
 
     # Initializations to DG requirments:
-    
-    def _build_search_filters(self):
-        """Build filters to search catalog."""
-        sensors = ("(" + " OR ".join(["sensorPlatformName = '{}'".format(
-            source) for source in self.specs['image_source']]) + ")")
-        filters = [sensors]
-        filters.append('cloudCover < {:d}'.format(int(self.specs['clouds'])))
-        if self.specs['offNadirAngle']:
-            filters.append('offNadirAngle {} {}'.format(
-                self.specs['offNadirAngle']))
-        return filters
 
     def _enforce_date_format(self):
         """Re-assign dates in DG-approved format.
@@ -113,6 +122,17 @@ class DGImageGrabber(grabber.ImageGrabber):
                 formatted = parsed.isoformat(timespec='milliseconds')
                 formatted = formatted.split('+')[0] + 'Z'
                 self.specs[date] = formatted
+                
+    def _build_search_filters(self):
+        """Build filters to search catalog."""
+        sensors = ("(" + " OR ".join(["sensorPlatformName = '{}'".format(
+            source) for source in self.specs['image_source']]) + ")")
+        filters = [sensors]
+        filters.append('cloudCover < {:d}'.format(int(self.specs['clouds'])))
+        if self.specs['offNadirAngle']:
+            filters.append('offNadirAngle {} {}'.format(
+                self.specs['offNadirAngle']))
+        return filters
 
 
     # Search and scene preparation.
@@ -136,21 +156,11 @@ class DGImageGrabber(grabber.ImageGrabber):
             
     def _clean(self, record):
         """Streamline image record."""
-        keymap = {  
-            'vendor': 'provider',
-            'sensorPlatformName': 'sensor',
-            'catalogID': 'catalogID',
-            'timestamp': 'timestamp',
-            'cloudCover': 'clouds',
-            'panResolution': 'resolution',
-            'browseURL': 'thumbnail',
-            'geometry': 'footprintWkt'
-        }
-        cleaned = {keymap[k]:v for k,v in record['properties'].items()
-                   if k in keymap.keys()}
+        cleaned = {self._keymap[k]:v for k,v in record['properties'].items()
+                   if k in self._keymap.keys()}
         return cleaned
 
-    def _compile_scenes(self, bbox, records):
+    def _compile_scenes(self, records, bbox):
         """Retrieve dask images from the catalog.
 
         As Digital Globe tiles are large and sparse, we do not attempt to 
@@ -168,8 +178,8 @@ class DGImageGrabber(grabber.ImageGrabber):
         record = next(records, None)
         while record and len(scenes) < self.specs['N_images']:
             ID, date = record['identifier'], record['properties']['timestamp']
-            overlap, frac_area = self._get_overlap(bbox, [record])
-            if not self._well_overlapped(frac_area, [ID]):
+            overlap, frac_area = self._get_overlap(bbox, record)
+            if not self._well_overlapped(frac_area, ID):
                 continue
             print('Trying ID {}: {}'.format(ID, date))
             try:
@@ -215,7 +225,7 @@ class DGImageGrabber(grabber.ImageGrabber):
             
     # Scene download
 
-    async def _download(self, bbox, scene):
+    async def _download(self, scene, bbox):
         """Download scene assets.
 
         Output: GeoTiff written to disk
@@ -224,7 +234,7 @@ class DGImageGrabber(grabber.ImageGrabber):
         """
         record = next(iter(scene))
         daskimg = record['daskimg']
-        bands = self._bandmap(daskimg.shape[0])
+        bands = self._bandmap[str(daskimg.shape[0])]
         if not self.specs['landcover_indices']:
             bands = bands[:3]
 
@@ -233,14 +243,6 @@ class DGImageGrabber(grabber.ImageGrabber):
         daskimg.geotiff(path=path, bands=bands, **self.specs)
         path = expand_histogram(path)
         return [path]
-
-    def _bandmap(self, n_bands):
-        """Retrieve the band ordering for R-G-B-NIR bands."""
-        bandmaps = {
-            '4': [2, 1, 0, 3],
-            '8': [4, 2, 1, 6]
-        }
-        return bandmaps[str(n_bands)]
 
     def _build_filename(self, bbox, record):
         """Build a filename for image output."""
