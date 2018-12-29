@@ -110,7 +110,7 @@ class ImageGrabber(ABC):
             scene = next(iter(self._compile_scenes(bbox, records)))
         except StopIteration:
             return {}
-        record = await self.grab_scene(bbox, scene)
+        record = await self.grab_scene(scene, bbox)
         return record
         
     async def grab_scene(self, scene, bbox):
