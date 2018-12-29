@@ -105,9 +105,9 @@ class ImageGrabber(ABC):
 
         Argument *args: For Planet, an item_type
         """
-        records = [self._search_id(catalogID, *args)]
+        records = iter([self._search_id(catalogID, *args)])
         try: 
-            scene = next(iter(self._compile_scenes(bbox, records)))
+            scene = next(iter(self._compile_scenes(records, bbox)))
         except StopIteration:
             return {}
         record = await self.grab_scene(scene, bbox)
