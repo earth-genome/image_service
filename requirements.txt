@@ -3,6 +3,7 @@ python-dateutil
 python-firebase
 numpy
 rasterio
+rio-color
 shapely
 scikit-image
 tifffile

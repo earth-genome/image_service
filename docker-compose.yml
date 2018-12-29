@@ -5,6 +5,8 @@ services:
     env_file: .env
     environment:
       - GOOGLE_APPLICATION_CREDENTIALS=/opt/webapp/.google_config.json
+      - LC_ALL=C.UTF-8
+      - LANG=C.UTF-8
     links:
       - redis_worker
       - redis_db
@@ -26,10 +28,14 @@ services:
     env_file: .env
     environment:
       - GOOGLE_APPLICATION_CREDENTIALS=/opt/webapp/.google_config.json
+      - LC_ALL=C.UTF-8
+      - LANG=C.UTF-8
     command: python3 worker.py
   thumbnailworker:
     image: image_service_web:latest
     env_file: .env
     environment:
       - GOOGLE_APPLICATION_CREDENTIALS=/opt/webapp/.google_config.json
+      - LC_ALL=C.UTF-8
+      - LANG=C.UTF-8
     command: python3 thumbnailworker.py
