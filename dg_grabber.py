@@ -195,7 +195,7 @@ class DGImageGrabber(grabber.ImageGrabber):
                 record = self._fastforward(
                     records, dateutil.parser.parse(date).date())
             else: 
-                record = next(records)
+                record = next(records, None)
 
         print('Found {} images of {} requested.'.format(
             len(scenes), self.specs['N_images']), flush=True)
