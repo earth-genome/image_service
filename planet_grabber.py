@@ -318,9 +318,12 @@ class PlanetGrabber(grabber.ImageGrabber):
             bands = bands[:3]
         paths = [gdal_routines.crop_and_reband(path, overlap, bands) 
                      for path in paths]
-                
-        scene_path = gdal_routines.merge(paths)
-        scene_record = self._merge_records([self._clean(r) for r in records])
+
+        if len(paths) > 1:
+            scene_path = gdal_routines.merge(paths)
+        else:
+            scene_path = next(iter(paths))
+        scene_record = {'component_images': [self._clean(r) for r in records]}
         return scene_path, scene_record
 
     def _reorder(self, paths, records):
@@ -352,10 +355,7 @@ class PlanetGrabber(grabber.ImageGrabber):
                 path = gdal_routines.reproject(path, target_epsg_code)
             reprojected.append(path)
         return reprojected
-    
-    def _merge_records(self, records):
-        """Combine records for all images in a scene."""
-        return {'component_images': [record for record in records]}
+
 
 
 
