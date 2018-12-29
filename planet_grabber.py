@@ -4,8 +4,7 @@ API ref: https://planetlabs.github.io/planet-client-python/index.html
 
 Class PlanetGrabber: Descendant of class grabber.ImageGrabber
 
-Normally this class will be deployed via the GrabberHandler in
-grabber_handlers.py. Usage directly from this module with default specs: 
+Usage with default specs: 
 
 > from utilities.geobox import geobox
 > bbox = geobox.bbox_from_scale(37.77, -122.42, 1.0)
@@ -310,11 +309,11 @@ class PlanetGrabber(grabber.ImageGrabber):
         if target_epsg_code:
             paths = self._reproject(paths, records, target_epsg_code)
 
-        footprint, _ = self._get_overlap(bbox, *records)
+        overlap, _ = self._get_overlap(bbox, *records)
         bands = self._bandmap[central_record['properties']['item_type']]
         if not self.specs['landcover_indices']:
             bands = bands[:3]
-        paths = [gdal_routines.crop_and_reband(path, footprint, bands) 
+        paths = [gdal_routines.crop_and_reband(path, overlap, bands) 
                      for path in paths]
                 
         scene_path = gdal_routines.merge(paths)

@@ -12,6 +12,7 @@ import datetime
 from itertools import islice
 import json
 import os
+import sys
 
 import dateutil
 import shapely
@@ -20,19 +21,32 @@ from postprocessing import color
 from postprocessing import gdal_routines
 from postprocessing import landcover
 from postprocessing import resample
+from utilities import cloud_storage
 from utilities.geobox import geobox
 
 SPECS_FILE = os.path.join(os.path.dirname(__file__), 'default_specs.json')
+
+STAGING_DIR = os.path.join(os.path.dirname(__file__), 'tmp-staging')
+
+def loop(function):
+    """Scheduling wrapper for async execution."""
+    def scheduled(*args, **kwargs):
+        loop = asyncio.get_event_loop()
+        output = loop.run_until_complete(function(*args, **kwargs))
+        return output
+    return scheduled
 
 class ImageGrabber(ABC):
     """Template for image grabbing.
 
     Template attributes:
         client: Satellite provider API instantiated interface  
+        bucket_tool: Class instance to access cloud storage bucket, or 
+            None to save images locally
         specs: Dict of catalog and image specs
 
     Template external methods:
-        __call__: Scheduling wrapper for async execution of pull()
+        __call__: Wrapper for async execution of pull().
         async pull: Pull the most recent images consistent with specs.
         async pull_by_id:  Pull and write image for a known catalogID.
         prep_scenes: Search and group search records into scenes.
@@ -43,20 +57,36 @@ class ImageGrabber(ABC):
         photoshop: Convert a raw GeoTiff into visual and data products.
     """
 
-    def __init__(self, client, specs_filename=SPECS_FILE, **specs):
+    def __init__(self, client, bucket='bespoke-images',
+                 staging_dir=STAGING_DIR, specs_filename=SPECS_FILE, **specs):
+
         self.client = client
+        if bucket:
+            try: 
+                self.bucket_tool = cloud_storage.BucketTool(bucket)
+            except Exception as e:
+                print('Bucket name not recognized.')
+                raise
+        else:
+            self.bucket_tool = None
+
         with open(specs_filename, 'r') as f:
             self.specs = json.load(f)
         self.specs.update(specs)
+        if not os.path.exists(staging_dir):
+            os.makedirs(staging_dir)
+        self.specs.update({
+            'file_header':
+                os.path.join(staging_dir, self.specs.get('file_header', ''))
+        })
 
         
     # Top level image grabbing functions
 
     def __call__(self, bbox):
-        """Scheduling wrapper for async execution of pull()."""
-        loop = asyncio.get_event_loop()
-        recs_written = loop.run_until_complete(self.pull(bbox))
-        return recs_written
+        """Wrapper for async execution of pull()."""
+        looped = loop(self.pull)
+        return looped(bbox)
 
     async def pull(self, bbox):
         """Pull the most recent images consistent with specs.
@@ -90,8 +120,26 @@ class ImageGrabber(ABC):
         output_paths = self.photoshop(merged_path)
         if self.specs['thumbnails']:
             resample.make_thumbnails(output_paths)
-        record.update({'paths': output_paths})
+        if self.bucket_tool:
+            urls = self._upload(output_paths)
+            record.update({'urls': urls})
+        else:
+            record.update({'paths': output_paths})
         return record
+
+    def _upload(self, paths):
+        """Upload staged image files to the bucket.
+
+        Output:  Files are uploaded and local copies removed.
+        Returns:  List of bucket urls.
+        """
+        urls = []
+        for path in paths:
+            urls.append(
+                self.bucket_tool.upload_blob(path, os.path.split(path)[1]))
+            os.remove(path)
+        print('Uploaded images:\n{}'.format(urls), flush=True)
+        return urls
 
     
     # Search and scene preparation
@@ -165,8 +213,8 @@ class ImageGrabber(ABC):
         """
         well_o = (frac_area >= self.specs['min_intersect'])
         if not well_o:
-            print('Rejecting scene {}. Overlap with bbox {:.1%}'.format(
-                IDs, frac_area))
+            print('Rejecting scene {}. '.format(IDs) +
+                'Overlap with bbox {:.1%}'.format(frac_area), flush=True)
         return well_o
 
     @abstractmethod
@@ -211,9 +259,9 @@ class ImageGrabber(ABC):
         """Convert a raw GeoTiff into visual and data products."""
         output_paths = []
         if self.specs['landcover_indices']:
-            output_paths.append(self._indexing(path))
+            output_paths += self._indexing(path)
             path = gdal_routines.reband(path, [1, 2, 3])
-        output_paths.append(self._coloring(path))
+        output_paths += self._coloring(path)
 
         if self.specs['thumbnails'] and output_paths:
             os.remove(path)
