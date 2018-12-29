@@ -20,34 +20,34 @@ import os
 
 import redis
 
+from grab_imagery import dg_grabber
+from grab_imagery.grabber import loop
+from grab_imagery.landsat import landsat_grabber
+from grab_imagery import planet_grabber 
+
 # Heroku provides the env variable REDIS_URL for Heroku redis;
 # the default redis://redis_db:6379 points to the local docker redis
 redis_url = os.getenv('REDIS_URL', 'redis://redis_db:6379')
 connection = redis.from_url(redis_url, decode_responses=True)
 
-from grab_imagery import grabber_handlers
+PROVIDER_CLASSES = {
+    'digital_globe': dg_grabber.DGImageGrabber,
+    'landsat': landsat_grabber.LandsatThumbnails,
+    'planet': planet_grabber.PlanetGrabber
+}
 
-def pull(db_key, bbox, **specs):
+def pull(db_key, provider, bbox, **specs):
     """Pull an image."""
-    grabber = grabber_handlers.GrabberHandler(**specs)
-    looped = grabber_handlers.loop(grabber.pull)
+    grabber = PROVIDER_CLASSES[provider](**specs)
+    looped = loop(grabber.pull)
     records = looped(bbox)
     connection.set(db_key, json.dumps(records))
     return records
 
-def pull_by_id(db_key, bbox, catalogID, item_type, **specs):
+def pull_by_id(db_key, provider, bbox, catalogID, item_type, **specs):
     """Pull an image for a known catalogID."""
-    provider = specs['providers'][0]
-    grabber = grabber_handlers.GrabberHandler(**specs)
-    looped = grabber_handlers.loop(grabber.pull_by_id)
-    records = looped(provider, bbox, catalogID, item_type)
-    connection.set(db_key, json.dumps(records))
-    return records
-
-def pull_for_story(db_key, story, **specs):
-    """Pull images for a story in the WTL database."""
-    grabber = grabber_handlers.StoryHandler(**specs)
-    looped = grabber_handlers.loop(grabber.pull_for_story)
-    records = looped(story)
-    connection.set(db_key, json.dumps(records))
-    return records 
+    grabber = PROVIDER_CLASSES[provider](**specs)
+    looped = loop(grabber.pull_by_id)
+    record = looped(bbox, catalogID, item_type)
+    connection.set(db_key, json.dumps(record))
+    return record

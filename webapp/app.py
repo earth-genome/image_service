@@ -1,8 +1,7 @@
 """A Flask web app to search and pull satellite imagery.
 
-Image search and story record retrieval are handled by the web app directly;
-image pulling is pushed to a Redis queue and handled by the worker process
-in worker.py.
+Image search is handled by the web app directly; image pulling is pushed to a 
+Redis queue and handled by the worker process in worker.py.
 """
 
 from datetime import datetime
@@ -15,23 +14,19 @@ from flask_restful import inputs
 import numpy as np
 from rq import Queue
 
-from grab_imagery.digital_globe.dg_grabber import KNOWN_IMAGE_SOURCES
-from grab_imagery.grabber_handlers import PROVIDER_CLASSES
-from grab_imagery.planet_labs.planet_grabber import KNOWN_ITEM_TYPES
-from grab_imagery.planet_labs.planet_grabber import KNOWN_ASSET_TYPES
-from grab_imagery.postprocessing import color
-from grab_imagery.postprocessing import landcover
-from grab_imagery.utilities import firebaseio
+from grab_imagery.dg_grabber import KNOWN_IMAGE_SOURCES
+from grab_imagery.planet_grabber import KNOWN_ITEM_TYPES, KNOWN_ASSET_TYPES
+from grab_imagery.postprocessing.color import STYLES
+from grab_imagery.postprocessing.landcover import INDICES
 from grab_imagery.utilities.geobox import geobox
 import puller_wrappers
+from puller_wrappers import PROVIDER_CLASSES
 import worker
 
 q = Queue('default', connection=worker.connection, default_timeout=3600)
 tnq = Queue('thumbnails', connection=worker.connection, default_timeout=900)
 app = Flask(__name__)
 
-# WTL database
-STORY_SEEDS = firebaseio.DB(firebaseio.FIREBASE_URL)
 
 # for help messaging
 EXAMPLE_ARGS = ('provider=digital_globe' +
@@ -47,15 +42,13 @@ ARGUMENTS = {
     'skip': 'Minimum number of days between images if N > 1',
     'clouds': 'Integer percentage cloud cover in range [0, 100]',
     'min_intersect': 'Float in range [0, 1.0]',
-    'write_styles': 'One or more of {}'.format(set(color.STYLES.keys())),
-    'indices': 'One or more of {}'.format(set(landcover.INDICES)),
+    'write_styles': 'One or more of {}'.format(set(STYLES.keys())),
+    'indices': 'One or more of {}'.format(set(INDICES)),
     'pansharp_scale': 'For DG: max scale for pansharpened images (in km)',
     'image_source': 'For DG: one or more of {}'.format(
         set(KNOWN_IMAGE_SOURCES)),
-    'item_types': 'For Planet: one or more of {}'.format(
-        set(KNOWN_ITEM_TYPES)),
-    'asset_types': 'For Planet: one or more of {}'.format(
-        set(KNOWN_ASSET_TYPES)),
+    'item_types': 'For Planet: one or more of {}'.format(set(KNOWN_ITEM_TYPES)),
+    'asset_type': 'For Planet: one of {}'.format(set(KNOWN_ASSET_TYPES)),
     'bucket_name': 'One of our Google cloud-storage buckets',
     'thumbnails': 'True/False'
 }
@@ -77,8 +70,6 @@ def welcome():
             ''.join((request.url, 'pull?')),
         'Pull image for a known catalogID':
             ''.join((request.url, 'pull-by-id?')),
-        'Pull images for a story in the WTL database':
-            ''.join((request.url, 'pull-for-story?')),
         'Retrieve links to images uploaded to Google Cloud storage':
             ''.join((request.url, 'links?'))
     }
@@ -99,7 +90,7 @@ def search():
         msg['Exception'] = repr(e)
         return jsonify(msg), 400
     try:
-        N_records = specs['N_images']
+        max_records = specs['N_images']
     except KeyError:
         return jsonify(msg), 400
 
@@ -113,8 +104,13 @@ def search():
     if not specs.get('image_source'):
         specs['image_source'] = KNOWN_IMAGE_SOURCES.copy()
 
-    grabber = PROVIDER_CLASSES[provider](**specs)
-    records = grabber.search_latlon_clean(lat, lon, N_records=N_records)
+    try:
+        grabber = PROVIDER_CLASSES[provider](**specs)
+        records = grabber.search_latlon_clean(lat, lon, max_records=max_records)
+    except Exception as e:
+        msg['Exception'] = repr(e)
+        return jsonify(msg), 400
+    
     return jsonify(records), 200
 
 @app.route('/search-by-id')
@@ -134,8 +130,13 @@ def search_by_id():
         msg['Exception'] = repr(e)
         return jsonify(msg), 400
 
-    grabber = PROVIDER_CLASSES[provider]()
-    record = grabber.search_id(catalogID, item_type)
+    try:
+        grabber = PROVIDER_CLASSES[provider]()
+        record = grabber.search_id_clean(catalogID, item_type)
+    except Exception as e:
+        msg['Exception'] = repr(e)
+        return jsonify(msg), 400
+    
     return jsonify(record), 200
     
 @app.route('/pull')
@@ -160,22 +161,22 @@ def pull():
         return jsonify(msg), 400
 
     bbox = geobox.bbox_from_scale(lat, lon, scale)
-    kwargs = dict({'providers': [provider]}, **specs)
     db_key = datetime.now().strftime('%Y%m%d%H%M%S%f')
     puller_wrappers.connection.set(db_key, json.dumps('In progress.'))
 
     if specs.get('thumbnails'):
         job = tnq.enqueue_call(
             func=puller_wrappers.pull,
-            args=(db_key, bbox),
-            kwargs=kwargs)
+            args=(db_key, provider, bbox),
+            kwargs=specs)
     else:
         job = q.enqueue_call(
             func=puller_wrappers.pull,
-            args=(db_key, bbox),
-            kwargs=kwargs)
+            args=(db_key, provider, bbox),
+            kwargs=specs)
 
-    guide = _pulling_guide(request.url_root, db_key, bbox.bounds, **kwargs)
+    guide = _pulling_guide(
+        request.url_root, db_key, provider, bbox.bounds, **specs)
     return jsonify(guide), 200
 
 @app.route('/pull-by-id')
@@ -200,51 +201,17 @@ def pull_by_id():
         return jsonify(msg), 400
 
     bbox = geobox.bbox_from_scale(lat, lon, scale)
-    kwargs = dict({'providers': [provider]}, **specs)
     db_key = datetime.now().strftime('%Y%m%d%H%M%S%f')
     puller_wrappers.connection.set(db_key, json.dumps('In progress.'))
-    
+
     job = q.enqueue_call(
         func=puller_wrappers.pull_by_id,
-        args=(db_key, bbox, catalogID, item_type),
-        kwargs=kwargs)
+        args=(db_key, provider, bbox, catalogID, item_type),
+        kwargs=specs)
 
-    kwargs.update({
-        'catalogID': catalogID,
-        'item_type': item_type
-    })
-    guide = _pulling_guide(request.url_root, db_key, bbox.bounds, **kwargs)
-    return jsonify(guide), 200
-
-@app.route('/pull-for-story')
-def pull_for_story():
-    """Pull images for a story in the WTL database."""
-    
-    msg = _help_msg(request.base_url,
-                    'idx=Index of the story in the database&N=3', '')
-
-    try:
-        idx = _parse_index(request.args)
-        record = STORY_SEEDS.get('/WTL', idx)
-        if not record:
-            raise ValueError('Story not found.')
-        specs = _parse_specs(request.args)
-    except ValueError as e:
-        msg['Exception'] = repr(e)
-        return jsonify(msg), 400
-    
-    story = firebaseio.DBItem('/WTL', idx, record)
-
-    db_key = datetime.now().strftime('%Y%m%d%H%M%S%f')
-    puller_wrappers.connection.set(db_key, json.dumps('In progress.'))
-
-    job = q.enqueue_call(
-        func=puller_wrappers.pull_for_story,
-        args=(db_key, story),
-        kwargs=specs,
-        timeout=7200)
-
-    guide = _pulling_guide(request.url_root, db_key, story.idx, **specs)
+    specs.update({'catalogID': catalogID, 'item_type': item_type})
+    guide = _pulling_guide(
+        request.url_root, db_key, provider, bbox.bounds, **specs)
     return jsonify(guide), 200
 
 @app.route('/links')
@@ -293,13 +260,13 @@ def _parse_specs(args):
         'write_styles': args.getlist('write_styles'),
         'landcover_indices': args.getlist('indices'),
         'pansharp_scale': args.get('pansharp_scale', type=float),
-        'image_source': args.getlist('image_sources'),
+        'image_source': args.getlist('image_source'),
         'item_types': args.getlist('item_types'),
-        'asset_types': args.getlist('asset_types'),
+        'asset_type': args.get('asset_type'),
         'bucket_name': args.get('bucket_name'),
         'thumbnails': args.get('thumbnails', type=inputs.boolean)
     }
-    if not set(specs['asset_types']) <= set(KNOWN_ASSET_TYPES):
+    if specs['asset_type'] and specs['asset_type'] not in KNOWN_ASSET_TYPES:
         raise ValueError('Supported asset_types are {} '.format(
             KNOWN_ASSET_TYPES) + '(applicable to Planet only)')
     if not set(specs['item_types']) <= set(KNOWN_ITEM_TYPES):
@@ -308,25 +275,14 @@ def _parse_specs(args):
     if not set(specs['image_source']) <= set(KNOWN_IMAGE_SOURCES):
         raise ValueError('Supported image_sources are {} '.format(
             KNOWN_IMAGE_SOURCES) + '(applicable to DG only)')
-    if not set(specs['write_styles']) <= set(color.STYLES.keys()):
+    if not set(specs['write_styles']) <= set(STYLES.keys()):
         raise ValueError('Supported write_styles are {}'.format(
-            list(color.STYLES.keys())))
-    if not set(specs['landcover_indices']) <= set(landcover.INDICES):
-        raise ValueError('Supported indices are {}'.format(landcover.INDICES))
-    
-    # override defaults to ensure availability of NIR band in this case:
-    if specs['landcover_indices'] and not specs['item_types']:
-        specs['item_types'] = ['PSScene4Band']
+            list(STYLES.keys())))
+    if not set(specs['landcover_indices']) <= set(INDICES):
+        raise ValueError('Supported indices are {}'.format(INDICES))
     
     specs = {k:v for k,v in specs.items() if v is not None and v != []}
     return specs
-
-def _parse_index(args):
-    """Parse url arguments for story index."""
-    idx = args.get('idx', type=str)
-    if not idx:
-        raise ValueError('A story index is required.')
-    return idx
 
 def _parse_catalog_keys(args):
     """Parse provider, catalogID, and item_type"""
@@ -351,14 +307,13 @@ def _help_msg(base_url, url_args, notes):
     }
     return msg
 
-def _pulling_guide(url_root, db_key, target, **specs):
-    hope = ('On completion images will be uploaded to Google cloud ' +
-        'storage, with links printed to stdout. Depending on the size of ' +
-        'the scene requested, this could take from a few minutes to one hour.')
+def _pulling_guide(url_root, db_key, provider, bounds, **specs):
     guide = {
-        'Pulling for': target,
+        'Provider': provider,
+        'Geographic bounds': bounds,
         'Specs': specs,
-        'Hope': hope,
+        'A message of hope': ('On completion images will be uploaded to '
+            'Google cloud storage. This could take several minutes.'),
         'Follow': '$ heroku logs --tail -a earthrise-imagery',
         'Links': '{}links?key={}'.format(url_root, db_key)
     }
