@@ -4,8 +4,7 @@ API ref: http://gbdxtools.readthedocs.io/en/latest/index.html
 
 Class DGImageGrabber: Descendant of class grabber.ImageGrabber
 
-Normally this class will be deployed via the GrabberHandler in
-grabber_handlers.py. Usage directly from this module with default specs: 
+Usage with default specs: 
 
 > from utilities.geobox import geobox
 > bbox = geobox.bbox_from_scale(37.77, -122.42, 1.0)
