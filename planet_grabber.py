@@ -202,7 +202,8 @@ class PlanetGrabber(grabber.ImageGrabber):
         date_0 = dateutil.parser.parse(base['properties']['acquired']).date()
 
         groups = {(sat_id, item_type): [base]}
-        for record in records:
+        record = next(records, None)
+        while record:
             date = dateutil.parser.parse(
                 record['properties']['acquired']).date()
             if date == date_0:
@@ -212,11 +213,13 @@ class PlanetGrabber(grabber.ImageGrabber):
                     groups[(sat_id, item_type)].append(record)
                 except KeyError:
                     groups.update({(sat_id, item_type): [record]})
+                record = next(records, None)
             else:
                 if self.specs.get('skip_days'):
                     if (date_0 - date).days < self.specs['skip_days']:
                         record = self._fastforward(records, date_0)
-                return groups, record
+                break
+        return groups, record
 
     def _read_footprint(self, record):
         """Extract footprint in record as a shapely shape."""
