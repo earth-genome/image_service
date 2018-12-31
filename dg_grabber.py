@@ -178,24 +178,23 @@ class DGImageGrabber(grabber.ImageGrabber):
         while record and len(scenes) < self.specs['N_images']:
             ID, date = record['identifier'], record['properties']['timestamp']
             overlap, frac_area = self._get_overlap(bbox, record)
-            if not self._well_overlapped(frac_area, ID):
-                continue
-            print('Trying ID {}: {}'.format(ID, date))
-            try:
-                daskimg = gbdxtools.CatalogImage(ID, **self.specs)
-                print('Retrieved ID {}'.format(ID))
-            except Exception as e:
-                print('Exception: {}'.format(e))
-                continue
+            if self._well_overlapped(frac_area, ID):
+                print('Trying ID {}: {}'.format(ID, date))
+                try:
+                    daskimg = gbdxtools.CatalogImage(ID, **self.specs)
+                    print('Retrieved ID {}'.format(ID))
+                except Exception as e:
+                    print('Exception: {}'.format(e))
+                    record = next(records, None)
+                    continue
 
-            record.update({'daskimg': daskimg.aoi(bbox=overlap.bounds)})
-            scenes.append([record])
-            
-            if self.specs.get('skip_days'):
-                record = self._fastforward(
-                    records, dateutil.parser.parse(date).date())
-            else: 
-                record = next(records, None)
+                record.update({'daskimg': daskimg.aoi(bbox=overlap.bounds)})
+                scenes.append([record])
+                if self.specs.get('skip_days'):
+                    record = self._fastforward(
+                        records, dateutil.parser.parse(date).date())
+                    continue
+            record = next(records, None)
 
         print('Found {} images of {} requested.'.format(
             len(scenes), self.specs['N_images']), flush=True)
