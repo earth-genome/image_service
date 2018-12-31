@@ -15,7 +15,7 @@ import os
 import sys
 
 import dateutil
-from shapely.ops import unary_union
+import shapely.ops
 
 from postprocessing import color
 from postprocessing import gdal_routines
@@ -199,7 +199,7 @@ class ImageGrabber(ABC):
         Returns: A Shapely shape and fractional area relative to bbox.
         """
         footprints = [self._read_footprint(r) for r in records]
-        overlap = bbox.intersection(unary_union(footprints))
+        overlap = bbox.intersection(shapely.ops.unary_union(footprints))
         return overlap, overlap.area/bbox.area
 
     def _well_overlapped(self, frac_area, *IDs):
