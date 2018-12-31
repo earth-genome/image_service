@@ -11,9 +11,16 @@ Usage with default specs:
 > g = DGImageGrabber()
 > g(bbox)
 
-Catalog and image specs have defaults set in default_specs.json, and can be 
-overriden by passing **kwargs to DGImageGrabber. As of writing, the
-DG-relevant default specs take form:
+Output images will be uploaded to Google cloud storage and relevant urls 
+returned. To save images locally, instantiate with 'bucket=None' and 
+an optional directory:
+> g = DGImageGrabber(bucket=None, staging_dir='my_dir')
+
+Catalog and image specs have defaults set in default_specs.json, and
+can be overriden by passing either specs_filename=alternate_specs.json
+or **kwargs to DGImageGrabber. As of writing, the DG-relevant default specs 
+take form:
+
 {
     "clouds": 10,   # maximum allowed percentage cloud cover
     "min_intersect": 0.9,  # min fractional overlap between bbox and scene
@@ -101,8 +108,8 @@ class DGImageGrabber(grabber.ImageGrabber):
     External attributes and methods are defined in the parent ImageGrabber. 
     """
     
-    def __init__(self, client=gbdxtools.catalog.Catalog(), **specs):
-        super().__init__(client, **specs)
+    def __init__(self, client=gbdxtools.catalog.Catalog(), **kwargs):
+        super().__init__(client, **kwargs)
         self._enforce_date_format()
         self._search_filters = self._build_search_filters()
         self._bandmap = BANDMAP.copy()

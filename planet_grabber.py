@@ -11,6 +11,11 @@ Usage with default specs:
 > g = PlanetGrabber()
 > g(bbox)
 
+Output images will be uploaded to Google cloud storage and relevant urls 
+returned. To save images locally, instantiate with 'bucket=None' and an 
+optional directory:
+> g = PlanetGrabber(bucket=None, staging_dir='my_dir')
+
 Because planet images are relatively small, multiple images often must be
 pulled and assembled to cover a bounding box. The minimal processing unit
 is therefore denoted a 'scene,' which includes all the images (or their
@@ -18,8 +23,10 @@ records) required to produce one final image of the bounding box.  A call
 will attempt to produce N_images such scenes.  
 
 Catalog and image specs have defaults set in default_specs.json, and can be 
-overriden by passing **kwargs to PlanetGrabber. As of writing, the
-Planet-relevant default specs take form:
+overriden by passing either specs_filename=alternate_specs.json
+or **kwargs to PlanetGrabber. As of writing, the Planet-relevant default 
+specs take form:
+
 {
     "clouds": 10,   # maximum allowed percentage cloud cover
     "min_intersect": 0.9,  # min fractional overlap between bbox and scene
@@ -105,8 +112,8 @@ class PlanetGrabber(grabber.ImageGrabber):
     External attributes and methods are defined in the parent ImageGrabber. 
     """
     
-    def __init__(self, client=api.ClientV1(), **specs):
-        super().__init__(client, **specs)
+    def __init__(self, client=api.ClientV1(), **kwargs):
+        super().__init__(client, **kwargs)
         self._validate_landcover_specs()
         self._search_filters = self._build_search_filters()
         self._bandmap = {k:v[self.specs['asset_type']]
