@@ -1,7 +1,7 @@
 """Abstract base class to automate search and download of satellite imagery.
 
 External class methods are defined in the template class ImageGrabber, here,
-and provider-dependent details expressed in its descendants 
+and provider-dependent details and usage examples expressed in its descendants 
 dg_grabber.DGImageGrabber and planet_grabber.PlanetGrabber.
 
 """
