@@ -264,7 +264,7 @@ class PlanetGrabber(grabber.ImageGrabber):
     # Scene activation and download
     
     async def _download(self, scene, *args):
-        """Retrieve assets for records in scene.
+        """Download scene assets.
 
         Returns: List of paths to downloaded raw images.
         """
@@ -297,7 +297,7 @@ class PlanetGrabber(grabber.ImageGrabber):
         return True if asset['status'] == 'active' else False
             
     def _write(self, asset):
-        """Download the image data and write to disk."""
+        """Call for the image data and write to disk."""
         body = self.client.download(asset).get_body()
         path = self.specs['file_header'] + body.name
         print('\nStaging at {}\n'.format(path), flush=True)
