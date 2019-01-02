@@ -269,17 +269,18 @@ class PlanetGrabber(grabber.ImageGrabber):
         Returns: List of paths to downloaded raw images.
         """
         tasks = [
-            self._activate(record['id'], record['properties']['item_type'])
+            self._activate(record['properties']['item_type'], record['id'])
                 for record in scene
         ]
         done, _ = await asyncio.wait(tasks, timeout=TIMEOUT)
-        paths = [self._write(task.result()) for task in done]
+        paths = [self._write(*task.result()) for task in done]
         return paths
     
-    async def _activate(self, catalogID, item_type):
+    async def _activate(self, item_type, catalogID):
         """Initiate and monitor asset activation.
 
-        Returns: Activated asset
+        Returns: Activated asset and its catalogID 
+            (so that ID tracks with asset during async processing)
         """
         assets = self.client.get_assets_by_id(item_type, catalogID).get()
         asset = assets[self.specs['asset_type']]
@@ -290,21 +291,27 @@ class PlanetGrabber(grabber.ImageGrabber):
             await asyncio.sleep(WAITTIME)
             assets = self.client.get_assets_by_id(item_type, catalogID).get()
             asset = assets[self.specs['asset_type']]
-        return asset
+        return asset, catalogID
 
     def _is_active(self, asset):
         """Check asset activation status."""
         return True if asset['status'] == 'active' else False
             
-    def _write(self, asset):
+    def _write(self, asset, catalogID):
         """Call for the image data and write to disk."""
         body = self.client.download(asset).get_body()
-        path = self.specs['file_header'] + body.name
+        path = self._build_filename(catalogID)
         print('\nStaging at {}\n'.format(path), flush=True)
         body.write(file=path)
         return path
 
+    def _build_filename(self, catalogID):
+        """Compose an image filename."""
+        filename = (self.specs['file_header'] + catalogID + '_' +
+                    self.specs['asset_type'] + '.tif')
+        return filename
 
+    
     # Reprocessing
     
     def _mosaic(self, paths, records, bbox):
@@ -312,6 +319,7 @@ class PlanetGrabber(grabber.ImageGrabber):
 
         Returns: Scene image path and cleaned, combined record.
         """
+        import pdb; pdb.set_trace()
         paths = self._reorder(paths, records)
         central_record = next(iter(self._sort_by_overlap(bbox, records)))
                                   
@@ -335,7 +343,7 @@ class PlanetGrabber(grabber.ImageGrabber):
 
     def _reorder(self, paths, records):
         """After async download, order paths to match order of their records."""
-        ordered = [None for _ in paths]
+        ordered = [None for _ in records]
         for n,r in enumerate(records):
             for path in paths:
                 if r['id'] in path:

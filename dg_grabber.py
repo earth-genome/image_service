@@ -250,7 +250,7 @@ class DGImageGrabber(grabber.ImageGrabber):
         return [path]
 
     def _build_filename(self, bbox, record):
-        """Build a filename for image output."""
+        """Compose an image filename."""
         tags = ('bbox{:.4f}_{:.4f}_{:.4f}_{:.4f}'.format(*bbox.bounds))
         filename = (self.specs['file_header'] + record['identifier'] + '_' +
                     record['properties']['timestamp'] + tags + '.tif')
