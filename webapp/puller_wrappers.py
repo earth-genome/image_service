@@ -41,7 +41,8 @@ def pull(db_key, provider, bbox, **specs):
     grabber = PROVIDER_CLASSES[provider](**specs)
     looped = loop(grabber.pull)
     records = looped(bbox)
-    connection.set(db_key, json.dumps(records))
+    reformatted = _format_exceptions(*records)
+    connection.set(db_key, json.dumps(reformatted))
     return records
 
 def pull_by_id(db_key, provider, bbox, catalogID, item_type, **specs):
@@ -49,5 +50,18 @@ def pull_by_id(db_key, provider, bbox, catalogID, item_type, **specs):
     grabber = PROVIDER_CLASSES[provider](**specs)
     looped = loop(grabber.pull_by_id)
     record = looped(bbox, catalogID, item_type)
-    connection.set(db_key, json.dumps(record))
+    reformatted = _format_exceptions(record)
+    connection.set(db_key, json.dumps(reformatted))
     return record
+
+def _format_exceptions(*results):
+    """Format returned exceptions to be JSON serializable.""" 
+    formatted = []
+    for r in results:
+        try:
+            raise r
+        except TypeError:  # raised if r isn't raisable
+            formatted.append(r)
+        except Exception as e:
+            formatted.append('Returned by asyncio.gather: {}'.format(repr(e)))
+    return formatted
