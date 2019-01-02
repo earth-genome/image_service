@@ -319,7 +319,6 @@ class PlanetGrabber(grabber.ImageGrabber):
 
         Returns: Scene image path and cleaned, combined record.
         """
-        import pdb; pdb.set_trace()
         paths = self._reorder(paths, records)
         central_record = next(iter(self._sort_by_overlap(bbox, records)))
                                   
