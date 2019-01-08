@@ -188,7 +188,7 @@ class PlanetGrabber(grabber.ImageGrabber):
             groups, next_rec = self._group_day(records, next_rec)
             groups = self._filter_by_overlap(bbox, groups)
             grouped_records = self._filter_copies(groups)
-            if self.specs.get('skip_days'):
+            if self.specs.get('skip_days') and grouped_records:
                 scenes.append(next(iter(grouped_records)))
             else:
                 scenes += grouped_records
