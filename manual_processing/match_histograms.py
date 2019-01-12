@@ -17,7 +17,7 @@ import numpy as np
 from rio_hist import match
 import skimage.io
 
-IMAGE_EXTS = ('tif', 'jpg', 'png')
+IMAGE_EXTS = ('tif', 'tiff', 'jpg', 'png')
 
 def parse_filename(filename):
     """Extract a prefix and extension from filename."""
