@@ -272,25 +272,27 @@ class ImageGrabber(ABC):
     def _indexing(self, path):
         """Compute landcover indices.
 
-        Returns: Paths to color-corrected images
+        Returns: Paths to grayscale images.
         """
         output_paths = []
-        indices = [index.lower() for index in self.specs['landcover_indices']
-                   if index in landcover.INDICES]
-        for index in indices:
-            output_paths.append(landcover.compute_index(path, index))
+        for index in self.specs['landcover_indices']:
+            try:
+                output_paths.append(landcover.compute_index(path, index))
+            except ValueError as e:
+                print('{}: {}. Continuing.'.format(repr(e), index), flush=True)
         return output_paths
     
     def _coloring(self, path):
         """Produce styles of visual images.
 
-        Returns: Paths to color-corrected images
+        Returns: Paths to color-corrected images.
         """
         output_paths = []
-        styles = [style.lower() for style in self.specs['write_styles']
-                  if style in color.STYLES.keys()]
-        for style in styles:
-            output_paths.append(color.ColorCorrect(style=style)(path))
+        for style in self.specs['write_styles']:
+            if style in color.STYLES.keys():
+                output_paths.append(color.ColorCorrect(style=style)(path))
+            else:
+                print('Style <{}> not recognized.'.format(style), flush=True)
         return output_paths
 
     
