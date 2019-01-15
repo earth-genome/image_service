@@ -113,13 +113,37 @@ class PlanetGrabber(grabber.ImageGrabber):
     
     def __init__(self, client=api.ClientV1(), **kwargs):
         super().__init__(client, **kwargs)
-        self._validate_landcover_specs()
-        self._search_filters = self._build_search_filters()
-        self._bandmap = {k:v[self.specs['asset_type']]
+        if self.specs['landcover_indices']:
+            self._tweak_landcover_specs()
+        self._validate_asset_type()
+        self._bandmap = {k:v.get(self.specs['asset_type'])
                              for k,v in BANDMAP.items()}
         self._keymap = KEYMAP.copy()
+        self._search_filters = self._build_search_filters()
 
     # Initializations to Planet requirements
+
+    def _tweak_landcover_specs(self):
+        """Adjust item and asset types as required for landcover indices."""
+        if 'PSScene3Band' in self.specs['item_types']:
+            print('Replacing PSSence3Band with -4Band for landcover indices.')
+            self.specs['item_types'].remove('PSScene3Band')
+            self.specs['item_types'].append('PSScene4Band')
+            self.specs['item_types'] = list(set(self.specs['item_types']))
+        if self.specs['asset_type'] != 'analytic':
+            print('Changing asset type to analytic, as required for landcover'
+                  ' indices.')
+            self.specs['asset_type'] = 'analytic'
+                
+    def _validate_asset_type(self):
+        """Check for mismatched item/asset types and raise helpfully."""
+        asset_type = self.specs['asset_type']
+        for item_type in self.specs['item_types']:
+            options = list(BANDMAP[item_type].keys())
+            if asset_type not in options:
+                memo = ('Asset type <{}> is not available for {}. Options '
+                        'are: {}').format(asset_type, item_type, options)
+                raise KeyError(memo)
 
     def _build_search_filters(self):
         """Build filters to search catalog."""
@@ -132,20 +156,8 @@ class PlanetGrabber(grabber.ImageGrabber):
             sf.append(api.filters.date_range('acquired',
                                              lt=self.specs['endDate']))
         return sf
-
-    def _validate_landcover_specs(self):
-        """Adjust item and asset types as needed for landcover indices."""
-        if self.specs['landcover_indices']:
-            if self.specs['asset_type'] != 'analytic':
-                print('Achtung: Changing asset type to analytic, as required '
-                      'for landcover indices.')
-                self.specs['asset_type'] = 'analytic'
-            if 'PSScene3Band' in self.specs['item_types']:
-                self.specs['item_types'].remove('PSScene3Band')
-                if 'PSScene4Band' not in self.specs['item_types']:
-                    self.specs['item_types'].append('PSScene4Band')
+                    
             
-
     # Search and scene preparation.
 
     def _search(self, bbox):
@@ -286,9 +298,9 @@ class PlanetGrabber(grabber.ImageGrabber):
         assets = self.client.get_assets_by_id(item_type, catalogID).get()
         try: 
             asset = assets[self.specs['asset_type']]
-        except KeyError as e:
-            raise KeyError('Asset type <{}> not available for {}:{}'.format(
-                self.specs['asset_type'], catalogID, item_type))
+        except KeyError:
+            raise KeyError('Asset type <{}> not available for ID {}.'.format(
+                self.specs['asset_type'], catalogID))
         
         self.client.activate(asset)
         print('Activating {}. '.format(catalogID) +
