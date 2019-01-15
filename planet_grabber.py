@@ -67,7 +67,6 @@ KNOWN_ASSET_TYPES = ['analytic', 'ortho_visual', 'visual']
 
 # For asynchronous handling of scene activation and download, in seconds:
 WAITTIME = 10
-TIMEOUT = 1800
 
 # Planet band numbers for R-G-B-NIR bands:
 BANDMAP = {   
@@ -268,22 +267,29 @@ class PlanetGrabber(grabber.ImageGrabber):
 
         Returns: List of paths to downloaded raw images.
         """
-        tasks = [
+        activation_tasks = [
             self._activate(record['properties']['item_type'], record['id'])
                 for record in scene
         ]
-        done, _ = await asyncio.wait(tasks, timeout=TIMEOUT)
-        paths = [self._write(*task.result()) for task in done]
+        results = await asyncio.gather(*activation_tasks)
+        paths = [self._write(*result) for result in results]
         return paths
     
     async def _activate(self, item_type, catalogID):
         """Initiate and monitor asset activation.
 
+        Raises: KeyError when requested asset type isn't available
+
         Returns: Activated asset and its catalogID 
             (so that ID tracks with asset during async processing)
         """
         assets = self.client.get_assets_by_id(item_type, catalogID).get()
-        asset = assets[self.specs['asset_type']]
+        try: 
+            asset = assets[self.specs['asset_type']]
+        except KeyError as e:
+            raise KeyError('Asset type <{}> not available for {}:{}'.format(
+                self.specs['asset_type'], catalogID, item_type))
+        
         self.client.activate(asset)
         print('Activating {}. '.format(catalogID) +
             'This could take several minutes.', flush=True)
@@ -301,7 +307,7 @@ class PlanetGrabber(grabber.ImageGrabber):
         """Call for the image data and write to disk."""
         body = self.client.download(asset).get_body()
         path = self._build_filename(catalogID)
-        print('\nStaging at {}\n'.format(path), flush=True)
+        print('Staging at {}\n'.format(path), flush=True)
         body.write(file=path)
         return path
 
@@ -342,11 +348,9 @@ class PlanetGrabber(grabber.ImageGrabber):
 
     def _reorder(self, paths, records):
         """After async download, order paths to match order of their records."""
-        ordered = [None for _ in records]
-        for n,r in enumerate(records):
-            for path in paths:
-                if r['id'] in path:
-                    ordered[n] = path
+        ordered = []
+        for r in records:
+            ordered.append(next(path for path in paths if r['id'] in path))
         return ordered
         
     def _sort_by_overlap(self, bbox, records):
