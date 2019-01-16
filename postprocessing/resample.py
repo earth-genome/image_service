@@ -18,7 +18,7 @@ def make_thumbnails(paths, max_dims=(512,512)):
         try: 
             img = Image.open(path)
         except OSError:
-            pass
+            continue
         img.thumbnail(max_dims)
         img = np.asarray(img)     # force the resampling now
         skimage.io.imsave(path, img)
