@@ -150,7 +150,7 @@ class ColorCorrect(object):
         img = self._balance_colors(img)
         img = self._remove_atmos(img)
 
-        profile['photometric'] = 'RGB'
+        profile.update({'photometric': 'RGB'})
         outpath = path.split('.tif')[0] + 'vis.tif'
         with rasterio.open(outpath, 'w', **profile) as f:
             f.write(img) 
@@ -175,7 +175,7 @@ class ColorCorrect(object):
         with rasterio.open(outpath) as f:
             img = f.read()
             profile = f.profile.copy()
-        profile['photometric'] = 'RGB'
+        profile.update({'photometric': 'RGB'})
         with rasterio.open(outpath, 'w', **profile) as f:
             f.write(img)
                 

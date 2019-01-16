@@ -287,8 +287,7 @@ def expand_histogram(geotiff, percentile=97, target_value=8e3):
             cut = np.percentile(band[np.where(band > 0)], percentile)
             coarsed[n] = ((band / cut) * target_value).astype('uint16')
             
-    profile['dtype'] = 'uint16'
-    profile['photometric'] = 'RGB'
+    profile.update({'dtype': 'uint16', 'photometric': 'RGB'})
     with rasterio.open(geotiff, 'w', **profile) as f:
         f.write(coarsed)
         
