@@ -126,7 +126,7 @@ class PlanetGrabber(grabber.ImageGrabber):
     def _tweak_landcover_specs(self):
         """Adjust item and asset types as required for landcover indices."""
         if 'PSScene3Band' in self.specs['item_types']:
-            print('Replacing PSSence3Band with -4Band for landcover indices.')
+            print('Replacing PSScene3Band with 4Band for landcover indices.')
             self.specs['item_types'].remove('PSScene3Band')
             self.specs['item_types'].append('PSScene4Band')
             self.specs['item_types'] = list(set(self.specs['item_types']))
