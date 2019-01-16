@@ -61,6 +61,8 @@ def crop_and_reband(filename, bbox, output_bands, clean=True):
         '-co', 'COMPRESS=LZW',
         filename, targetname
     ]
+    if len(output_bands) == 3:
+        commands += ['-co', 'photometric=RGB']
     subprocess.call(commands)
     if clean:
         os.remove(filename)
@@ -149,6 +151,8 @@ def reband(filename, output_bands, clean=True):
         '--config', 'GDAL_PAM_ENABLED', 'NO',
         filename, targetname
     ]
+    if len(output_bands) == 3:
+        commands += ['-co', 'photometric=RGB']
     subprocess.call(commands)
     if clean:
         os.rename(targetname, filename)
