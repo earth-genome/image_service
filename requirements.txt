@@ -11,3 +11,4 @@ rasterio
 rio-hist
 rio-color
 python-dateutil
+pyproj
