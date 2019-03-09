@@ -143,7 +143,12 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     bounds = reduce_landsat.get_bounds(args.geojson) if args.geojson else []
+
+    # N.B. for gdalbuildvrt, if there is spatial overlap between files, 
+    # content is fetched from files that appear later in the list.
     image_files = glob.glob(os.path.join(args.image_dir, '*.tif'))
+    image_files.sort()  
+    
     in_bit_depth = get_bit_depth(image_files)
     if args.bit_depth and args.bit_depth not in ALLOWED_BIT_DEPTHS:
         raise ValueError('Invalid output bit depth: {}.'.format(bit_depth))
