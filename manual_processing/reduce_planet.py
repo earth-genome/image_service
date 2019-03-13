@@ -50,14 +50,13 @@ def vrt_merge(files, outfile, srcnodata=0):
     subprocess.call(commands)
     return vrtfile
 
-def resolve(vrtfile, *, bandlist, in_bit_depth, out_bit_depth, bounds=[]):
-    """Convert vrtfile to tif while resolving bands, bit depths, and geo bounds.
+def resolve(vrtfile, bandlist=[], bounds=[]):
+    """Convert vrtfile to tif while resolving bands and geographic bounds.
 
     Arguments:
         vrtfile: A file output by gdalbuildvrt
         bandlist: Ordered list of output bands
-        bit_depth: Integer output bit depth (8 or 16)
-        bounds: Optional list of geographic corner coordinates (shapely format)
+        bounds: List of geographic corner coordinates (shapely format)
 
     Outputs a geotiff; returns the filename.
     """
@@ -73,13 +72,6 @@ def resolve(vrtfile, *, bandlist, in_bit_depth, out_bit_depth, bounds=[]):
     if bounds:
         gdal_bounds = [str(bounds[n]) for n in (0, 3, 2, 1)]
         commands += ['-projwin_srs', 'EPSG:4326', '-projwin', *gdal_bounds]
-        
-    if out_bit_depth in ALLOWED_BIT_DEPTHS:
-        img_type = 'UInt16' if out_bit_depth == 16 else 'Byte'
-        commands += [
-            '-ot', img_type, '-scale', '0', str(2**in_bit_depth - 1),
-            '0', str(2**out_bit_depth - 1)
-        ]
 
     subprocess.call(commands)
     os.remove(vrtfile)
@@ -99,6 +91,23 @@ def get_bit_depth(image_files):
                          'Dtypes: {}'.format(list(zip(image_files, dtypes))))
     
     return input_bit_depth
+
+def change_bit_depth(image_file, input_bit_depth, output_bit_depth):
+    """Rewrite the image file to a different bit depth."""
+    assert in_bit_depth in ALLOWED_BIT_DEPTHS
+    assert out_bit_depth in ALLOWED_BIT_DEPTHS
+
+    tmp_file = image_file + '-tmp'
+    os.rename(image_file, tmp_file)
+    
+    img_type = 'UInt16' if out_bit_depth == 16 else 'Byte'
+    commands = [
+        'gdal_translate', tmp_file, image_file,
+        '-ot', img_type, '-scale', '0', str(2**input_bit_depth - 1),
+        '0', str(2**output_bit_depth - 1)
+    ]
+    subprocess.call(commands)
+    os.remove(tmp_file)
     
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -147,15 +156,22 @@ if __name__ == '__main__':
     # N.B. for gdalbuildvrt, if there is spatial overlap between files, 
     # content is fetched from files that appear later in the list.
     image_files = glob.glob(os.path.join(args.image_dir, '*.tif'))
-    image_files.sort()  
+    image_files.sort()
     
-    in_bit_depth = get_bit_depth(image_files)
-    if args.bit_depth and args.bit_depth not in ALLOWED_BIT_DEPTHS:
-        raise ValueError('Invalid output bit depth: {}.'.format(bit_depth))
-    
+    input_bit_depth = get_bit_depth(image_files)
+    if args.bit_depth:
+        if args.bit_depth not in ALLOWED_BIT_DEPTHS:
+            raise ValueError('Invalid output bit depth: {}.'.format(bit_depth))
+        elif args.bit_depth == input_bit_depth:
+            args.bit_depth = None
+
     vrtfile = vrt_merge(image_files, args.outfile)
-    tiffile = resolve(vrtfile, bandlist=args.bandlist, bounds=bounds,
-                      in_bit_depth=in_bit_depth, out_bit_depth=args.bit_depth)
+    tiffile = resolve(vrtfile, bandlist=args.bandlist, bounds=bounds)
+    
     if args.color_style:
         color.ColorCorrect(cores=1, style=args.color_style)(tiffile)
         
+    if args.bit_depth:
+        change_bit_depth(tiffile, input_bit_depth, args.bit_depth)
+    
+
