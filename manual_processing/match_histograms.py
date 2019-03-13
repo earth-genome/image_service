@@ -1,9 +1,16 @@
 """Command-line wrapper for the rio-hist routine to match image histograms.
 
-Usage: python match_histograms.py source_img.tif ref_img.tif
+Usage: 
+$ python match_histograms.py source_img.tif ref_img.tif [-nd nodata_value]
+
+For more:
+$ python match_histograms.py -h
 
 It is assumed that pixel values in the two images have the same range, 
-be it (0,255), (0., 1.), etc.  
+be it (0,255), (0., 1.), etc. This is lightly enforced by asserting that 
+the two image arrays have the same dtypes. Due to a bug in masked array 
+handling with rio_hist, only integer dtypes are allowed if a nodata_value is
+given.
 
 This routine operates on R, G, B bands in succession and does not offer
 matching in other color spaces as does rio hist.  
@@ -12,6 +19,7 @@ matching in other color spaces as does rio hist.
 
 import argparse
 
+import numpy as np
 import rasterio
 from rio_hist import match
 
@@ -21,6 +29,37 @@ def parse_filename(filename):
     ext = splits[-1]
     prefix = '.'.join(splits[:-1])
     return prefix, ext
+
+def mask_image(img, mask_val):
+    """Build a masked array for an image.
+
+    The mask applies to points where all bands at a given (row, col) equal 
+    the mask_val, e.g. [R, G, B] = [0, 0, 0]. 
+
+    Due to a bug exposed in an interaction between np.unique sort and the 
+    masked array default fill value, matching fails for masked uint8/16 
+    images. A work-around is to cast the masked image to type int32, so that
+    the default fill value (999999) is not modded out to 8 or 16 bits. 
+    
+    stackoverflow.com/questions/42360616/unexpected-numpy-unique-behavior
+
+    Therefore this masking will corrupt non-integer-type images.
+
+    Arguments: 
+        img: An array of shape (bands, rows, cols)
+        mask_val: Integer value to mask
+
+    Raises TypeError: For non-integer type images.
+
+    Returns: Numpy masked array
+    """
+    if not np.issubdtype(img.dtype, np.integer):
+        raise TypeError('When supplying a nodata value, images must be integer'
+                        'type. See notes in match_histograms.py for details.')
+    
+    mask_coords = np.all(img.T==[mask_val for _ in range(len(img))], axis=-1).T
+    mask = np.array([mask_coords for _ in range(len(img))])
+    return np.ma.masked_array(img.astype('int32'), mask=mask)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Match image histograms')
@@ -34,6 +73,11 @@ if __name__ == '__main__':
         type=str,
         help='Filename of image with histogram to match.'
     )
+    parser.add_argument(
+        '-nd', '--nodata_val',
+        type=int,
+        help='Integer no data value to (optionally) exclude from match.'
+    )
     args = parser.parse_args()
 
     with rasterio.open(args.src_filename) as f:
@@ -43,14 +87,27 @@ if __name__ == '__main__':
         ref = f.read()
     assert src.dtype == ref.dtype
     assert len(src) == len(ref)
-            
-    matched = src.copy()
-    for band in range(len(src)):
-        matched[band] = match.histogram_match(src[band], ref[band])
+    matched = []
+
+    if args.nodata_val is None:
+        for band in range(len(src)):
+            mband = match.histogram_match(src[band], ref[band])
+            matched.append(mband.astype(src.dtype))
+    else:
+        masked_src = mask_image(src, args.nodata_val)
+        masked_ref = mask_image(ref, args.nodata_val)
+        for band in range(len(src)):
+            mband = match.histogram_match(masked_src[band], masked_ref[band])
+            mband[np.where(mband.data == mband.fill_value)] = args.nodata_val
+            matched.append(mband.data.astype(src.dtype))
+
+    # Ensure this as workaround to likely rio bug in handling uint16 headers
+    if len(matched) == 3:
+        profile.update({'photometric': 'RGB'})
 
     src_prefix, src_ext = parse_filename(args.src_filename)
     with rasterio.open(src_prefix+'-matched.'+src_ext, 'w', **profile) as f:
-        f.write(matched)
+        f.write(np.asarray(matched))
 
         
 
