@@ -6,7 +6,7 @@ extraneous files ending in .tif.
 
 Usage for Planet analytic: 
 $ python reduce_planet.py 3 2 1 -d tile_dir -s base [-g footprint.geojson] 
-    [-b 8] -o outfile.tif
+    [-b 8] -o /path/to/outfile.tif
 
 3 2 1 indicate R-G-B band orderings.  
 
@@ -35,41 +35,81 @@ import numpy as np
 import rasterio
 
 current_dir = os.path.dirname(os.path.abspath(getsourcefile(lambda:0)))
-parent_dir = os.path.join(current_dir, '..')
-sys.path.insert(1, parent_dir)
+sys.path.insert(1, os.path.dirname(current_dir))
 
 from manual_processing import reduce_landsat
 from postprocessing import color
 
 ALLOWED_BIT_DEPTHS = (8, 16)
 
-def vrt_merge(files, outfile, srcnodata=0):
-    """Build a virtual mosaic from input files.""" 
-    vrtfile = outfile.split('.tif')[0] + '.vrt'
-    commands = ['gdalbuildvrt', '-srcnodata', str(srcnodata), vrtfile, *files]
+def build_image(paths, outpath='./reduced.tif', **kwargs):
+    """Produce one or more images from raw Planet tiles.
+
+    Arguments: 
+        paths: List of paths to input geotiffs
+        outpath: Path to the basic output image 
+        
+        kwargs (optional):
+            geojson: A geojson feature or feature collection expressing
+                area for crop
+            bandlist: List of integer band numbers to assemble in R-G-B-(NIR)
+                order
+            bit_depth: Integer, new output bit depth 
+            color_style: One of color.STYLES.keys()
+    
+    Returns: Paths to image file(s) written to disk
+    """
+    input_bit_depth = get_bit_depth(paths)
+    bit_depth = kwargs.get('bit_depth')
+    if bit_depth and bit_depth not in ALLOWED_BIT_DEPTHS:
+        raise ValueError('Invalid output bit depth: {}.'.format(bit_depth))
+    
+    vrtfile = vrt_merge(paths, outpath)
+    tiffile = resolve(vrtfile, **kwargs)
+    outpaths = [tiffile]
+
+    style = kwargs.get('color_style')
+    if style:
+        outpaths.append(color.ColorCorrect(cores=1, style=style)(tiffile))
+
+    if bit_depth and bit_depth != input_bit_depth:
+        for f in outpaths:
+            change_bit_depth(f, input_bit_depth, bit_depth)
+        
+    return outpaths
+
+def vrt_merge(paths, outpath, srcnodata=0):
+    """Build a virtual mosaic from input paths.""" 
+    vrtfile = outpath.split('.tif')[0] + '.vrt'
+    commands = ['gdalbuildvrt', '-srcnodata', str(srcnodata), vrtfile, *paths]
     subprocess.call(commands)
     return vrtfile
 
-def resolve(vrtfile, bandlist=[], bounds=[]):
+def resolve(vrtfile, **kwargs):
     """Convert vrtfile to tif while resolving bands and geographic bounds.
 
     Arguments:
         vrtfile: A file output by gdalbuildvrt
-        bandlist: Ordered list of output bands
-        bounds: List of geographic corner coordinates (shapely format)
+        kwargs (optional):
+            bandlist: Ordered list of output bands
+            geojson: A geojson feature or feature collection expressing
+                a crop region
 
     Outputs a geotiff; returns the filename.
     """
     tiffile = vrtfile.split('.vrt')[0] + '.tif'
     commands = ['gdal_translate', vrtfile, tiffile, '-co', 'COMPRESS=LZW']
-    
+
+    bandlist = kwargs.get('bandlist')
     if bandlist:
         dressed_bands = np.asarray([('-b', str(b)) for b in bandlist])
         commands += [*dressed_bands.flatten()]
         if len(bandlist) == 3:
             commands += ['-colorinterp', 'red,green,blue']
-            
-    if bounds:
+
+    geojson = kwargs.get('geojson')
+    if geojson: 
+        bounds = reduce_landsat.get_bounds(geojson)
         gdal_bounds = [str(bounds[n]) for n in (0, 3, 2, 1)]
         commands += ['-projwin_srs', 'EPSG:4326', '-projwin', *gdal_bounds]
 
@@ -77,32 +117,32 @@ def resolve(vrtfile, bandlist=[], bounds=[]):
     os.remove(vrtfile)
     return tiffile
 
-def get_bit_depth(image_files):
+def get_bit_depth(paths):
     """Determine and check consistency of input bit depth."""
     dtypes = []
-    for image_file in image_files:
-        with rasterio.open(image_file) as f:
+    for path in paths:
+        with rasterio.open(path) as f:
             dtypes.append(f.profile['dtype'])
             
     input_bit_depth = np.iinfo(next(iter(dtypes))).bits
     if not len(set(dtypes)) <= 1 or input_bit_depth not in ALLOWED_BIT_DEPTHS:
         
         raise ValueError('Input dtypes must all match, either Unit8 or Unit16. '
-                         'Dtypes: {}'.format(list(zip(image_files, dtypes))))
+                         'Dtypes: {}'.format(list(zip(paths, dtypes))))
     
     return input_bit_depth
 
-def change_bit_depth(image_file, input_bit_depth, output_bit_depth):
-    """Rewrite the image file to a different bit depth."""
-    assert in_bit_depth in ALLOWED_BIT_DEPTHS
-    assert out_bit_depth in ALLOWED_BIT_DEPTHS
+def change_bit_depth(path, input_bit_depth, output_bit_depth):
+    """Rewrite the image at path to a different bit depth."""
+    assert input_bit_depth in ALLOWED_BIT_DEPTHS
+    assert output_bit_depth in ALLOWED_BIT_DEPTHS
 
-    tmp_file = image_file + '-tmp'
-    os.rename(image_file, tmp_file)
+    tmp_file = path + '-tmp'
+    os.rename(path, tmp_file)
     
-    img_type = 'UInt16' if out_bit_depth == 16 else 'Byte'
+    img_type = 'UInt16' if output_bit_depth == 16 else 'Byte'
     commands = [
-        'gdal_translate', tmp_file, image_file,
+        'gdal_translate', tmp_file, path,
         '-ot', img_type, '-scale', '0', str(2**input_bit_depth - 1),
         '0', str(2**output_bit_depth - 1)
     ]
@@ -113,7 +153,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
         'bandlist',
-        type=str,
+        type=int,
         nargs='+',
         help=('Band numbers to assemble in R-G-B(-NIR) order. '
               'For Planet Analytic: 3 2 1 or 3 2 1 4. '
@@ -131,10 +171,10 @@ if __name__ == '__main__':
         help='Optional color correction style.'
     )
     parser.add_argument(
-        '-d', '--image_dir',
+        '-d', '--tile_dir',
         type=str,
         default='',
-        help='Directory containing image files. Defaults to pwd.'
+        help='Directory containing Planet image tiles. Defaults to pwd.'
     )
     parser.add_argument(
         '-b', '--bit_depth',
@@ -144,34 +184,17 @@ if __name__ == '__main__':
     )
     req_group = parser.add_argument_group(title='required flags')
     req_group.add_argument(
-        '-o', '--outfile',
+        '-o', '--outpath',
         type=str,
         required=True,
-        help='Name of base output file, e.g. outfile.tif.'
+        help='Path to basic output file, e.g. ./outfile.tif.'
     )
     args = parser.parse_args()
 
-    bounds = reduce_landsat.get_bounds(args.geojson) if args.geojson else []
-
     # N.B. for gdalbuildvrt, if there is spatial overlap between files, 
     # content is fetched from files that appear later in the list.
-    image_files = glob.glob(os.path.join(args.image_dir, '*.tif'))
-    image_files.sort()
+    tiles = glob.glob(os.path.join(args.tile_dir, '*.tif'))
+    tiles.sort()
     
-    input_bit_depth = get_bit_depth(image_files)
-    if args.bit_depth:
-        if args.bit_depth not in ALLOWED_BIT_DEPTHS:
-            raise ValueError('Invalid output bit depth: {}.'.format(bit_depth))
-        elif args.bit_depth == input_bit_depth:
-            args.bit_depth = None
-
-    vrtfile = vrt_merge(image_files, args.outfile)
-    tiffile = resolve(vrtfile, bandlist=args.bandlist, bounds=bounds)
-    
-    if args.color_style:
-        color.ColorCorrect(cores=1, style=args.color_style)(tiffile)
-        
-    if args.bit_depth:
-        change_bit_depth(tiffile, input_bit_depth, args.bit_depth)
-    
-
+    outpaths = build_image(tiles, **vars(args))
+    print('Wrote {}'.format(outpaths))
