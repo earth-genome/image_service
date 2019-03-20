@@ -146,6 +146,10 @@ class ColorCorrect(object):
         with rasterio.open(path) as f:
             profile = f.profile.copy()
             img = f.read()
+        if not img.any():
+            print('Warning: Image {} has all null values.'.format(path))
+            return path
+        
         img = self._expand_histogram(img)
         img = self._balance_colors(img)
         img = self._remove_atmos(img)
