@@ -1,11 +1,13 @@
-"""Routine to mosaic, crop and color correct geotiff tiles downloaded from 
-the Planet Explorer website, or more generally, to mosaic and crop geotiffs.
+"""Routine to mosaic, crop and color correct geotiff tiles.
+
+In the example that follows, we composite a scene from 
+analytic tiles downloaded from the Planet Explorer website.
 
 First, assemble all tiles (*.tif files) in a single tile_dir, with no 
 extraneous files ending in .tif.
 
 Usage for Planet analytic: 
-$ python reduce_planet.py 3 2 1 -d tile_dir -s base [-g footprint.geojson] 
+$ python reduce_tiles.py 3 2 1 -d tile_dir -s base [-g footprint.geojson] 
     [-b 8] -o /path/to/outfile.tif
 
 3 2 1 indicate R-G-B band orderings.  
@@ -43,7 +45,7 @@ from postprocessing import color
 ALLOWED_BIT_DEPTHS = (8, 16)
 
 def build_image(paths, outpath='./reduced.tif', **kwargs):
-    """Produce one or more images from raw Planet tiles.
+    """Produce one or more images from raw satellite image tiles.
 
     Arguments: 
         paths: List of paths to input geotiffs
@@ -174,7 +176,7 @@ if __name__ == '__main__':
         '-d', '--tile_dir',
         type=str,
         default='',
-        help='Directory containing Planet image tiles. Defaults to pwd.'
+        help='Directory containing image tiles. Defaults to pwd.'
     )
     parser.add_argument(
         '-b', '--bit_depth',
