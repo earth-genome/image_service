@@ -66,16 +66,28 @@ be set as such by setting override_proj='EPSG:4326'. Generically, here, it
 will be the Universal Transverse Mercator (UTM) projection appropriate for
 the bbox.
 
+---
+
+A note on a bug or a clash between shapley and other geo libraries (osgeo and 
+therefore possibly rasterio and gbdxtools): There is some chat about the 
+bug here: https://github.com/Toblerity/Shapely/issues/260. So far, importing
+shapely before the other geo libraries has worked for me, though this 
+requirement seems now even to extend to importing geobox before 
+dg_grabber from the interpreter. It may be a local issue on my OS due to 
+Homebrew python installation - and therefore may not effect the dockerized 
+image service. 
 
 """
 
 import asyncio
+import os
 
 import dateutil
 import numpy as np
 import shapely
-import gbdxtools  # bug in geo libraries.  import this *after* shapely
-import rasterio # this too
+import gbdxtools  # Bug in geo libraries.  Import this *after* shapely.
+import rasterio  # This too.
+from rasterio.enums import ColorInterp
 
 import grabber 
 from utilities.geobox import geobox
@@ -246,7 +258,9 @@ class DGImageGrabber(grabber.ImageGrabber):
         path = self._build_filename(bbox, record)
         print('\nStaging at {}\n'.format(path), flush=True)
         daskimg.geotiff(path=path, bands=bands, **self.specs)
-        path = expand_histogram(path)
+        self._ensure_uint16(path)
+        self._ensure_colorinterp(path)
+        
         return [path]
 
     def _build_filename(self, bbox, record):
@@ -255,40 +269,75 @@ class DGImageGrabber(grabber.ImageGrabber):
         filename = (self.specs['file_header'] + record['identifier'] + '_' +
                     record['properties']['timestamp'] + tags + '.tif')
         return filename
-
-
-# Function to regularize raw DG GeoTiffs
-
-def expand_histogram(geotiff, percentile=97, target_value=8e3):
-    """Convert to uint16 and do a rough bandwise histogram expansion.
-
-    The dtype kwarg to DG img.geotiff method functions only for Worldview
-    images. Across all sensors, allowing default dytpe, images come as 
-    float32 with a uint16-like value range or as uint16. I have observed pixel
-    values larger than 2**14, but not as of yet larger than 2**16,
-    and generally the histogram is concentrated in the first
-    twelve bits. Relative R-G-B weightings are not reproduced consistently
-    from image to image of the same scene.
-
-    This function does a rough histogram expansion, finding the pixel 
-    value at the given percentile for each band and resetting that to the 
-    target_value. This allows the routines in postprocessing.color to be 
-    applied with the same parameters to both DG and Planet Labs images.
-
-    Output: Overwrites an expanded, uint16 GeoTiff
-
-    Returns: Path to the GeoTiff
-    """
-    with rasterio.open(geotiff) as dataset:
-        profile = dataset.profile.copy()
-        img = dataset.read()
-        coarsed = np.zeros(img.shape, dtype='uint16')
-        for n, band in enumerate(img):
-            cut = np.percentile(band[np.where(band > 0)], percentile)
-            coarsed[n] = ((band / cut) * target_value).astype('uint16')
-            
-    profile.update({'dtype': 'uint16', 'photometric': 'RGB'})
-    with rasterio.open(geotiff, 'w', **profile) as f:
-        f.write(coarsed)
         
-    return geotiff
+    def _ensure_uint16(self, path):
+        """Enforce uint16 dtype.
+
+        The dtype kwarg to DG img.geotiff method functions only for Worldview
+        images. Across all sensors, allowing default dtype, images come as 
+        float32 with a uint16-like value range or as uint16. I have observed 
+        pixel values larger than 2**14, but not as of yet larger than 2**16, 
+        and generally the histogram is concentrated in the first twelve bits. 
+        This method checks dtype and casts the float32 images to uint16.
+        """
+        with rasterio.open(path, 'r') as f:
+            profile = f.profile
+            if profile['dtype'] == 'uint16':
+                return
+            else:
+                img = f.read()
+
+        profile.update({'dtype': 'uint16'})
+        with rasterio.open(path, 'w', **profile) as f:
+            f.write(img.astype('uint16'))
+            
+    def _ensure_colorinterp(self, path):
+        """Apply an RGB color interpretation to a 3-band image."""
+        with rasterio.open(path, 'r+') as f:
+            if f.count == 3:
+                f.colorinterp = [ColorInterp.red, ColorInterp.green,
+                                 ColorInterp.blue]
+    
+
+    # Reprocessing
+    
+    def _coloring(self, path):
+        """Produce styles of visual images, with added histogram adjustment."""
+        if self.specs['write_styles']:
+            reg = self._regularize_histogram(path)
+            output_paths = super()._coloring(reg)
+            os.remove(reg)
+        else:
+            output_paths = []
+        return output_paths
+        
+    def _regularize_histogram(self, geotiff, percentile=97, target_value=8e3):
+        """Run a rough bandwise histogram expansion.
+
+        This is a companion method to _ensure_image_format() to regularize
+        some idiosyncracies of DG images. Relative R-G-B weightings are not 
+        reproduced consistently from image to image of the same scene.
+
+        This method does a rough histogram expansion, finding the pixel 
+        value at the given percentile for each band and resetting that to the 
+        target_value. It allows the routines in postprocessing.color to be 
+        applied with the same parameters to both DG and Planet Labs images.
+
+        Output: Writes to file a GeoTiff with histogram expanded
+
+        Returns: Path to the GeoTiff
+        """
+        with rasterio.open(geotiff) as f:
+            profile = f.profile
+            img = f.read()
+            
+        coarsed = []
+        for band in img:
+            cut = np.percentile(band[np.where(band > 0)], percentile)
+            coarsed.append((band / cut) * target_value)
+
+        outfile = '.'.join(geotiff.split('.')[:-1]) + 'reg.tif'
+        with rasterio.open(outfile, 'w', **profile) as f:
+            f.write(np.array(coarsed, dtype=profile['dtype']))
+
+        return outfile
