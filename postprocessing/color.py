@@ -173,14 +173,11 @@ class ColorCorrect(object):
         ]
         subprocess.call(commands)
 
-        # There seems to be a bug in the way rio color writes headers for
-        # uint16 files. They can still be read by skimage and rasterio but
-        # not Preview or Photoshop. Read/rewrite for a temporary fix:
+        # Read/rewrite for a temporary fix to Issue #14 (Bug in rasterio.)
         with rasterio.open(outpath) as f:
             img = f.read()
             profile = f.profile.copy()
-        profile.update({'photometric': 'RGB'})
-        with rasterio.open(outpath, 'w', **profile) as f:
+        with rasterio.open(outpath, 'w', photometric='RGB', **profile) as f:
             f.write(img)
                 
         return outpath
