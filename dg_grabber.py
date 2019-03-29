@@ -66,17 +66,6 @@ be set as such by setting override_proj='EPSG:4326'. Generically, here, it
 will be the Universal Transverse Mercator (UTM) projection appropriate for
 the bbox.
 
----
-
-A note on a bug or a clash between shapley and other geo libraries (osgeo and 
-therefore possibly rasterio and gbdxtools): There is some chat about the 
-bug here: https://github.com/Toblerity/Shapely/issues/260. So far, importing
-shapely before the other geo libraries has worked for me, though this 
-requirement seems now even to extend to importing geobox before 
-dg_grabber from the interpreter. It may be a local issue on my OS due to 
-Homebrew python installation - and therefore may not effect the dockerized 
-image service. 
-
 """
 
 import asyncio
@@ -85,8 +74,8 @@ import os
 import dateutil
 import numpy as np
 import shapely
-import gbdxtools  # Bug in geo libraries.  Import this *after* shapely.
-import rasterio  # This too.
+import gbdxtools  # Clash between Shapely/GEOS libraries. Import after shapely.
+import rasterio   # This too. See Issue #13.
 from rasterio.enums import ColorInterp
 
 import grabber 
@@ -257,10 +246,12 @@ class DGImageGrabber(grabber.ImageGrabber):
 
         path = self._build_filename(bbox, record)
         print('\nStaging at {}\n'.format(path), flush=True)
-        daskimg.geotiff(path=path, bands=bands, **self.specs)
-        self._ensure_uint16(path)
-        self._ensure_colorinterp(path)
-        
+        # WIP - Issues #9, #14 - see notes in _ensure_image_format() below.
+        daskimg.geotiff(path=path, bands=bands, dtype='uint16', **self.specs)
+        self._ensure_image_format(path)
+        #self._ensure_uint16(path) 
+        #self._ensure_colorinterp(path)
+
         return [path]
 
     def _build_filename(self, bbox, record):
@@ -274,11 +265,8 @@ class DGImageGrabber(grabber.ImageGrabber):
         """Enforce uint16 dtype.
 
         The dtype kwarg to DG img.geotiff method functions only for Worldview
-        images. Across all sensors, allowing default dtype, images come as 
-        float32 with a uint16-like value range or as uint16. I have observed 
-        pixel values larger than 2**14, but not as of yet larger than 2**16, 
-        and generally the histogram is concentrated in the first twelve bits. 
-        This method checks dtype and casts the float32 images to uint16.
+        images (ref Issue #9). This method checks dtype and casts the float32 
+        images to uint16.
         """
         with rasterio.open(path, 'r') as f:
             profile = f.profile
@@ -298,7 +286,28 @@ class DGImageGrabber(grabber.ImageGrabber):
                 f.colorinterp = [ColorInterp.red, ColorInterp.green,
                                  ColorInterp.blue]
     
+    def _ensure_image_format(self, path):
+        """Enforce uint16 dtype and, for 3-band images, RGB colorinterp.
 
+        Due to a likely bug in rasterio, _ensure_colorinterp() makes 
+        images unreadable by Preview and Photoshop (ref Issue #14). 
+        Further, the dtype kwarg to DG's daskimg.geotiff() method often or 
+        always fails to yield uint16 images (ref Issue #9).
+        This heavy-handed workaround accounts for both issues and avoids
+        rewriting images twice. To delete in favor of the factored functions 
+        as the issues get resolved.
+        """
+        with rasterio.open(path, 'r') as f:
+            profile = f.profile
+            img = f.read()
+
+        profile.update({'dtype': 'uint16'})
+        if profile['count'] == 3:
+            profile.update({'photometric': 'RGB'})
+        with rasterio.open(path, 'w', **profile) as f:
+            f.write(img.astype('uint16'))
+            
+        
     # Reprocessing
     
     def _coloring(self, path):
