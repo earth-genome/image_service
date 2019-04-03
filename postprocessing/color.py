@@ -164,7 +164,7 @@ class ColorCorrect(object):
         """Tune colors."""
         outpath = path.split('.tif')[0] + self.style + '.tif'
         commands = [
-            'rio', 'color', '-j', str(self.cores),
+            'rio', 'color', '-j', str(self.cores), '--co', 'photometric=RGB',
             path, outpath,
             'gamma', 'RGB', str(self.params['gamma']),
             'sigmoidal', 'RGB', *[str(v) for v in
@@ -172,14 +172,6 @@ class ColorCorrect(object):
             'saturation', str(self.params['saturation'])
         ]
         subprocess.call(commands)
-
-        # Read/rewrite for a temporary fix to Issue #14 (Bug in rasterio.)
-        with rasterio.open(outpath) as f:
-            img = f.read()
-            profile = f.profile.copy()
-        with rasterio.open(outpath, 'w', photometric='RGB', **profile) as f:
-            f.write(img)
-                
         return outpath
     
     def _expand_histogram(self, img):
