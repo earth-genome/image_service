@@ -222,7 +222,6 @@ class DGImageGrabber(grabber.ImageGrabber):
     def _check_highres(self, bbox):
         """Allow highest resolution when bbox smaller than pansharp_scale."""
         size = np.mean(geobox.get_side_distances(bbox))
-        import pdb; pdb.set_trace()
         return True if size < self.specs['pansharp_scale'] else False
     
     def _read_footprint(self, record):
