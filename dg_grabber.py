@@ -222,6 +222,7 @@ class DGImageGrabber(grabber.ImageGrabber):
     def _check_highres(self, bbox):
         """Allow highest resolution when bbox smaller than pansharp_scale."""
         size = np.mean(geobox.get_side_distances(bbox))
+        import pdb; pdb.set_trace()
         return True if size < self.specs['pansharp_scale'] else False
     
     def _read_footprint(self, record):
@@ -246,11 +247,8 @@ class DGImageGrabber(grabber.ImageGrabber):
 
         path = self._build_filename(bbox, record)
         print('\nStaging at {}\n'.format(path), flush=True)
-        # WIP - Issues #9, #14 - see notes in _ensure_image_format() below.
         daskimg.geotiff(path=path, bands=bands, dtype='uint16', **self.specs)
         self._ensure_image_format(path)
-        #self._ensure_uint16(path) 
-        #self._ensure_colorinterp(path)
 
         return [path]
 
@@ -260,42 +258,16 @@ class DGImageGrabber(grabber.ImageGrabber):
         filename = (self.specs['file_header'] + record['identifier'] + '_' +
                     record['properties']['timestamp'] + tags + '.tif')
         return filename
-        
-    def _ensure_uint16(self, path):
-        """Enforce uint16 dtype.
-
-        The dtype kwarg to DG img.geotiff method functions only for Worldview
-        images (ref Issue #9). This method checks dtype and casts the float32 
-        images to uint16.
-        """
-        with rasterio.open(path, 'r') as f:
-            profile = f.profile
-            if profile['dtype'] == 'uint16':
-                return
-            else:
-                img = f.read()
-
-        profile.update({'dtype': 'uint16'})
-        with rasterio.open(path, 'w', **profile) as f:
-            f.write(img.astype('uint16'))
-            
-    def _ensure_colorinterp(self, path):
-        """Apply an RGB color interpretation to a 3-band image."""
-        with rasterio.open(path, 'r+') as f:
-            if f.count == 3:
-                f.colorinterp = [ColorInterp.red, ColorInterp.green,
-                                 ColorInterp.blue]
     
     def _ensure_image_format(self, path):
-        """Enforce uint16 dtype and, for 3-band images, RGB colorinterp.
+        """Enforce uint16 dtype and, for 3-band images, RGB photometric interp.
 
-        Due to a likely bug in rasterio, _ensure_colorinterp() makes 
-        images unreadable by Preview and Photoshop (ref Issue #14). 
-        Further, the dtype kwarg to DG's daskimg.geotiff() method often or 
-        always fails to yield uint16 images (ref Issue #9).
-        This heavy-handed workaround accounts for both issues and avoids
-        rewriting images twice. To delete in favor of the factored functions 
-        as the issues get resolved.
+        The dtype kwarg to DG's daskimg.geotiff() method often or 
+        always fails to yield uint16 images (ref Issue #9). And for GeoTIFF, 
+        an RGB photometric interpretation (where appropriate) must be asserted
+        when the file is created. This routine overwrites the input file
+        to handle these two file formatting issues. (Factoring the two 
+        operations would require reading and rewriting the file twice.)
         """
         with rasterio.open(path, 'r') as f:
             profile = f.profile
