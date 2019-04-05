@@ -34,7 +34,8 @@ def mask_image(img, mask_val):
     """Build a masked array for an image.
 
     The mask applies to points where all bands at a given (row, col) equal 
-    the mask_val, e.g. [R, G, B] = [0, 0, 0]. 
+    the mask_val, e.g. [R, G, B] = [0, 0, 0]. Fourth bands are likely alpha 
+    bands and are excluded from this check.
 
     Due to a bug exposed in an interaction between np.unique sort and the 
     masked array default fill value, matching fails for masked uint8/16 
@@ -56,8 +57,9 @@ def mask_image(img, mask_val):
     if not np.issubdtype(img.dtype, np.integer):
         raise TypeError('When supplying a nodata value, images must be integer'
                         'type. See notes in match_histograms.py for details.')
-    
-    mask_coords = np.all(img.T==[mask_val for _ in range(len(img))], axis=-1).T
+
+    mask_vals = [mask_val for _ in range(len(img[:3]))]
+    mask_coords = np.all(img[:3].T == mask_vals, axis=-1).T
     mask = np.array([mask_coords for _ in range(len(img))])
     return np.ma.masked_array(img.astype('int32'), mask=mask)
 
@@ -92,22 +94,21 @@ if __name__ == '__main__':
     if args.nodata_val is None:
         for band in range(len(src)):
             mband = match.histogram_match(src[band], ref[band])
-            matched.append(mband.astype(src.dtype))
+            matched.append(mband)
     else:
         masked_src = mask_image(src, args.nodata_val)
         masked_ref = mask_image(ref, args.nodata_val)
         for band in range(len(src)):
             mband = match.histogram_match(masked_src[band], masked_ref[band])
-            mband[np.where(mband.data == mband.fill_value)] = args.nodata_val
-            matched.append(mband.data.astype(src.dtype))
+            mband[masked_src.mask[band]] = args.nodata_val
+            matched.append(mband)
 
-    # Ensure this as workaround to likely rio bug in handling uint16 headers
     if len(matched) == 3:
         profile.update({'photometric': 'RGB'})
 
     src_prefix, src_ext = parse_filename(args.src_filename)
     with rasterio.open(src_prefix+'-matched.'+src_ext, 'w', **profile) as f:
-        f.write(np.asarray(matched))
+        f.write(np.asarray(matched, dtype=src.dtype))
 
         
 
