@@ -58,10 +58,8 @@ def _format_exceptions(*results):
     """Format returned exceptions to be JSON serializable.""" 
     formatted = []
     for r in results:
-        try:
-            raise r
-        except TypeError:  # raised if r isn't raisable
+        if isinstance(r, Exception):
+            formatted.append('Returned by asyncio.gather: {}'.format(repr(r)))
+        else:
             formatted.append(r)
-        except Exception as e:
-            formatted.append('Returned by asyncio.gather: {}'.format(repr(e)))
     return formatted
