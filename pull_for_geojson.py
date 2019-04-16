@@ -52,9 +52,9 @@ async def pull_for_geojson(image_grabber, filename):
 
 async def pull_for_feature(image_grabber, feature):
     """Pull images for a geojson feature."""
-    if 'properties' not in feature.keys():
+    if 'properties' not in feature:
         feature.update({'properties': {}})
-    if 'images' not in feature['properties'].keys():
+    if 'images' not in feature['properties']:
         feature['properties'].update({'images': []})
     polygon = shapely.geometry.asShape(feature['geometry'])
     bbox = shapely.geometry.box(*polygon.bounds)
@@ -69,8 +69,8 @@ if __name__ == '__main__':
     parser.add_argument(
         'provider',
         type=str,
-        choices=GRABBERS.keys(),
-        help='An image provider, from {}.'.format(list(GRABBERS.keys()))
+        choices=list(GRABBERS),
+        help='An image provider, from {}.'.format(list(GRABBERS))
     )
     parser.add_argument(
         'features_filename',

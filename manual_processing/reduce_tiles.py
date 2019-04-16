@@ -57,7 +57,7 @@ def build_image(paths, outpath='./reduced.tif', **kwargs):
             bandlist: List of integer band numbers to assemble in R-G-B-(NIR)
                 order
             bit_depth: Integer, new output bit depth 
-            color_style: One of color.STYLES.keys()
+            color_style: One of color.STYLES
     
     Returns: Paths to image file(s) written to disk
     """
@@ -169,7 +169,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '-s', '--color_style',
         type=str,
-        choices=list(color.STYLES.keys()),
+        choices=list(color.STYLES),
         help='Optional color correction style.'
     )
     parser.add_argument(
