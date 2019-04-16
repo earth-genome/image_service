@@ -34,7 +34,7 @@ EXAMPLE_ARGS = ('provider=digital_globe' +
                 '&start=2017-01-01&end=2018-01-01&clouds=10&N=1')
 
 ARGUMENTS = {
-    'provider': 'One of {}'.format(set(PROVIDER_CLASSES.keys())),
+    'provider': 'One of {}'.format(set(PROVIDER_CLASSES)),
     'lat, lon': 'Decimal lat, lon',
     'scale': 'Side length of image in kilometers (float)',
     'start, end': 'Dates in format YYYY-MM-DD',
@@ -42,7 +42,7 @@ ARGUMENTS = {
     'skip': 'Minimum number of days between images if N > 1',
     'clouds': 'Integer percentage cloud cover in range [0, 100]',
     'min_intersect': 'Float in range [0, 1.0]',
-    'write_styles': 'One or more of {}'.format(set(STYLES.keys())),
+    'write_styles': 'One or more of {}'.format(set(STYLES)),
     'indices': 'One or more of {}'.format(set(INDICES)),
     'pansharp_scale': 'For DG: max scale for pansharpened images (in km)',
     'image_source': 'For DG: one or more of {}'.format(
@@ -233,9 +233,9 @@ def get_links():
 def _parse_provider(args):
     """Parse url arguments for provider."""
     provider = args.get('provider')
-    if not provider or provider not in PROVIDER_CLASSES.keys():
+    if not provider or provider not in PROVIDER_CLASSES:
         raise ValueError('A provider is required. Supported providers ' +
-                         'are {}'.format(list(PROVIDER_CLASSES.keys())))
+                         'are {}'.format(set(PROVIDER_CLASSES)))
     return provider
 
 def _parse_geoloc(args):
@@ -275,9 +275,8 @@ def _parse_specs(args):
     if not set(specs['image_source']) <= set(KNOWN_IMAGE_SOURCES):
         raise ValueError('Supported image_sources are {} '.format(
             KNOWN_IMAGE_SOURCES) + '(applicable to DG only)')
-    if not set(specs['write_styles']) <= set(STYLES.keys()):
-        raise ValueError('Supported write_styles are {}'.format(
-            list(STYLES.keys())))
+    if not set(specs['write_styles']) <= set(STYLES):
+        raise ValueError('Supported write_styles are {}'.format(set(STYLES)))
     if not set(specs['landcover_indices']) <= set(INDICES):
         raise ValueError('Supported indices are {}'.format(INDICES))
     
