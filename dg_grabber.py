@@ -164,7 +164,7 @@ class DGImageGrabber(grabber.ImageGrabber):
     def _clean(self, record):
         """Streamline image record."""
         cleaned = {self._keymap[k]:v for k,v in record['properties'].items()
-                   if k in self._keymap.keys()}
+                   if k in self._keymap}
         return cleaned
 
     def _compile_scenes(self, records, bbox):

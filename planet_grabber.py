@@ -139,7 +139,7 @@ class PlanetGrabber(grabber.ImageGrabber):
         """Check for mismatched item/asset types and raise helpfully."""
         asset_type = self.specs['asset_type']
         for item_type in self.specs['item_types']:
-            options = list(BANDMAP[item_type].keys())
+            options = list(BANDMAP[item_type])
             if asset_type not in options:
                 memo = ('Asset type <{}> is not available for {}. Options '
                         'are: {}').format(asset_type, item_type, options)
@@ -184,7 +184,7 @@ class PlanetGrabber(grabber.ImageGrabber):
         cleaned.update({'thumbnail': record['_links']['thumbnail']})
         cleaned.update({'full_record': record['_links']['_self']})
         cleaned.update({self._keymap[k]:v for k,v
-            in record['properties'].items() if k in self._keymap.keys()})
+            in record['properties'].items() if k in self._keymap})
         cleaned['clouds'] *= 100
         return cleaned
 
@@ -263,10 +263,10 @@ class PlanetGrabber(grabber.ImageGrabber):
         Returns: List of scenes (each scene a list of records)
         """
         filtered = {}
-        sat_ids = set([sat_id for (sat_id, _) in groups.keys()])
+        sat_ids = set([sat_id for (sat_id, _) in groups])
         for sat_id in sat_ids:
             for item_type in KNOWN_ITEM_TYPES:
-                if (sat_id, item_type) in groups.keys():
+                if (sat_id, item_type) in groups:
                     filtered[sat_id] = groups[(sat_id, item_type)]
                     break
         return list(filtered.values())

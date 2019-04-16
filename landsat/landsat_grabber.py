@@ -182,7 +182,7 @@ class LandsatThumbnails(object):
         """
         output_paths = []
         styles = [style.lower() for style in self.specs['write_styles']
-                  if style in color.STYLES.keys()]
+                  if style in color.STYLES]
 
         for style in styles:
             outpath = color.ColorCorrect(style=style)(path)

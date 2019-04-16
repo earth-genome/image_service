@@ -289,7 +289,7 @@ class ImageGrabber(ABC):
         """
         output_paths = []
         for style in self.specs['write_styles']:
-            if style in color.STYLES.keys():
+            if style in color.STYLES:
                 output_paths.append(color.ColorCorrect(style=style)(path))
             else:
                 print('Style <{}> not recognized.'.format(style), flush=True)
