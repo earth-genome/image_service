@@ -87,10 +87,12 @@ if __name__ == '__main__':
         profile = f.profile.copy()
     with rasterio.open(args.ref_filename) as f:
         ref = f.read()
-    assert src.dtype == ref.dtype
-    assert len(src) == len(ref)
+    if src.dtype != ref.dtype:
+        raise TypeError('Dtypes of the images do not match.')
+    if len(src) != len(ref):
+        raise ValueError('Images do not have the same number of bands.')
+            
     matched = []
-
     if args.nodata_val is None:
         for band in range(len(src)):
             mband = match.histogram_match(src[band], ref[band])
