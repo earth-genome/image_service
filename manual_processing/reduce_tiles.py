@@ -136,8 +136,10 @@ def get_bit_depth(paths):
 
 def change_bit_depth(path, input_bit_depth, output_bit_depth):
     """Rewrite the image at path to a different bit depth."""
-    assert input_bit_depth in ALLOWED_BIT_DEPTHS
-    assert output_bit_depth in ALLOWED_BIT_DEPTHS
+    if input_bit_depth not in ALLOWED_BIT_DEPTHS:
+        raise ValueError('Input image bit depth is not supported.')
+    if output_bit_depth not in ALLOWED_BIT_DEPTHS:
+        raise ValueError('Requested output bit depth is not supported.')
 
     tmp_file = path + '-tmp'
     os.rename(path, tmp_file)
