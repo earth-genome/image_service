@@ -111,7 +111,9 @@ class PlanetGrabber(grabber.ImageGrabber):
     External attributes and methods are defined in the parent ImageGrabber. 
     """
     
-    def __init__(self, client=api.ClientV1(), **kwargs):
+    def __init__(self, client=None, **kwargs):
+        if not client:
+            client = api.ClientV1()
         super().__init__(client, **kwargs)
         if self.specs['landcover_indices']:
             self._tweak_landcover_specs()

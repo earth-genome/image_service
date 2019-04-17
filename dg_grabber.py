@@ -109,7 +109,9 @@ class DGImageGrabber(grabber.ImageGrabber):
     External attributes and methods are defined in the parent ImageGrabber. 
     """
     
-    def __init__(self, client=gbdxtools.catalog.Catalog(), **kwargs):
+    def __init__(self, client=None, **kwargs):
+        if not client:
+            client = gbdxtools.catalog.Catalog()
         super().__init__(client, **kwargs)
         self._enforce_date_format()
         self._search_filters = self._build_search_filters()
