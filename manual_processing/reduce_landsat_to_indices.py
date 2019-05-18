@@ -32,11 +32,16 @@ The routine outputs a Float32 grayscale image for each scene.
 
 import argparse
 import glob
+from inspect import getsourcefile
 import os
 import subprocess
 import sys
 
+current_dir = os.path.dirname(os.path.abspath(getsourcefile(lambda:0)))
+sys.path.insert(1, os.path.dirname(current_dir))
 import reduce_landsat
+from utilities.geobox import geobox
+from utilities.geobox import geojsonio
 
 INDICES = ['ndvi', 'ndwi']
 
@@ -129,7 +134,8 @@ if __name__ == '__main__':
     )
     args = parser.parse_args()
 
-    bounds = reduce_landsat.get_bounds(args.geojson) if args.geojson else []
+    geoms = geojsonio.load_geometries(args.geojson) if args.geojson else []
+    bounds = geobox.bbox_from_geometries(geoms).bounds if geoms else []
     image_files = glob.glob(os.path.join(args.image_dir, '*band?.tif'))
     grouped = reduce_landsat.partition(image_files, args.bandlist)
     for prefix, files in grouped.items():

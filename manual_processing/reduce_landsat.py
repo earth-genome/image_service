@@ -36,11 +36,16 @@ The routine outputs one geotiff for each processed scene.
 
 import argparse
 import glob
+from inspect import getsourcefile
 import json
 import os
 import subprocess
+import sys
 
-from shapely import geometry
+current_dir = os.path.dirname(os.path.abspath(getsourcefile(lambda:0)))
+sys.path.insert(1, os.path.dirname(current_dir))
+from utilities.geobox import geobox
+from utilities.geobox import geojsonio
 
 WHITE_PT = 3500
 BIT_DEPTH = 16
@@ -126,33 +131,7 @@ def filter_bands(prefix, files, bandlist):
             raise FileNotFoundError('Missing color bands for {}'.format(prefix))
     return bandfiles
 
-# Geojson handling
 
-def get_bounds(geojson):
-    """Extract bounding box from first geometry in geojson.
-
-    Returns: List of coordinates ordered [minx, miny, maxx, maxy]
-    """
-    with open(geojson, 'r') as f:
-        collection = json.load(f)
-    geom = extract_geom(collection)
-    return list(geometry.asShape(geom).bounds)
-    
-def extract_geom(geojson):
-    """Find the first available geometry in the geojson."""
-    if geojson['type'] == 'FeatureCollection':
-        features = geojson['features']
-        geom = features[0]['geometry']
-        if len(features) > 1:
-            print('Proceeding with first available geometry: {}'.format(geom))
-    elif geojson['type'] == 'Feature':
-        geom = geojson['geometry']
-    else:
-        raise TypeError('GeoJSON type {} not recognized.'.format(
-            geojson['type']))
-    return geom
-
-        
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='Process Landsat surface reflectance tiles. Routine ' +
@@ -193,7 +172,9 @@ if __name__ == '__main__':
     )
     args = parser.parse_args()
 
-    bounds = get_bounds(args.geojson) if args.geojson else []
+    geoms = geojsonio.load_geometries(args.geojson) if args.geojson else []
+    bounds = geobox.bbox_from_geometries(geoms).bounds if geoms else []
+
     image_files = glob.glob(os.path.join(args.image_dir, '*band?.tif'))
     grouped = partition(image_files, args.bandlist)
     for prefix, files in grouped.items():
