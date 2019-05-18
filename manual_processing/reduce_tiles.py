@@ -16,7 +16,7 @@ For Planet Analytic: R-G-B-NIR are bands 3 2 1 4
 For Planet Visual or other visual image: R-G-B are bands 1 2 3
 
 For more details see:
-$ python reduce_planet.py -h
+$ python reduce_tiles.py -h
 
 Output is one or two files: outfile.tif (raw image) and 
 outfilevisbase.tif (color corrected to style 'base').  
@@ -27,8 +27,8 @@ To re-mosaic tiles already reduced, again do not supply a -s option.
 """
 
 import argparse
-from inspect import getsourcefile
 import glob
+from inspect import getsourcefile
 import os
 import subprocess
 import sys
@@ -38,9 +38,9 @@ import rasterio
 
 current_dir = os.path.dirname(os.path.abspath(getsourcefile(lambda:0)))
 sys.path.insert(1, os.path.dirname(current_dir))
-
-from manual_processing import reduce_landsat
 from postprocessing import color
+from utilities.geobox import geobox
+from utilities.geobox import geojsonio
 
 ALLOWED_BIT_DEPTHS = (8, 16)
 
@@ -111,8 +111,8 @@ def resolve(vrtfile, **kwargs):
 
     geojson = kwargs.get('geojson')
     if geojson: 
-        bounds = reduce_landsat.get_bounds(geojson)
-        gdal_bounds = [str(bounds[n]) for n in (0, 3, 2, 1)]
+        bbox = geobox.bbox_from_geometries(geojsonio.load_geometries(geojson))
+        gdal_bounds = [str(bbox.bounds[n]) for n in (0, 3, 2, 1)]
         commands += ['-projwin_srs', 'EPSG:4326', '-projwin', *gdal_bounds]
 
     subprocess.call(commands)
