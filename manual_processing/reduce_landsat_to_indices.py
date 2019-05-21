@@ -37,6 +37,8 @@ import os
 import subprocess
 import sys
 
+import rasterio
+
 current_dir = os.path.dirname(os.path.abspath(getsourcefile(lambda:0)))
 sys.path.insert(1, os.path.dirname(current_dir))
 import reduce_landsat
@@ -58,48 +60,53 @@ def build_index(prefix, files, bounds, index):
 
     Returns: Geotiff filename
     """
-    nir = crop_and_retype(prefix + 'nir', files[0], bounds)
+    nirpath = crop(prefix + 'nir', files[0], bounds) 
     if index == 'ndvi':
-        colorband = crop_and_retype(prefix + 'color', files[1], bounds)
+        colorpath = crop(prefix + 'color', files[1], bounds)
     elif index == 'ndwi':
-        colorband = crop_and_retype(prefix + 'color', files[2], bounds)
-    outfile = calculate_index(nir, colorband, index)
-    for f in (nir, colorband):
+        colorpath = crop(prefix + 'color', files[2], bounds)
+    else:
+        raise ValueError('Landcover index not recognized.')
+    
+    outfile = calculate_index(nirpath, colorpath, index)
+    for f in (nirpath, colorpath):
         os.remove(f)
     return outfile
 
-def crop_and_retype(prefix, bandfile, bounds):
-    """Crop bandfile and retype to Float32.
+def crop(prefix, bandfile, bounds):
+    """Crop bandfile to geographic bounds.
 
-    Outputs a geotiff; returns the filename
+    Output: Writes a geotiff prefix.tif.
     """
-    vrtfile, cropfile = prefix + '.vrt', prefix + '.tif'
-    commands1 = ['gdalbuildvrt', vrtfile, bandfile,
-                '-srcnodata', '-9999', '-vrtnodata', '0']
-    commands2 = ['gdal_translate', vrtfile, cropfile, '-a_nodata', 'None',
-                '-ot', 'Float32',
-                '-scale', '-65535', '65535', '-1.0', '1.0']
+    cropfile = prefix + '.tif'
+    commands = ['gdal_translate', bandfile, cropfile]
     if bounds:
         gdal_bounds = [str(bounds[n]) for n in (0, 3, 2, 1)]
-        commands2 += ['-projwin_srs', 'EPSG:4326', '-projwin', *gdal_bounds]
-    subprocess.call(commands1)
-    subprocess.call(commands2)
-    os.remove(vrtfile)
+        commands += ['-projwin_srs', 'EPSG:4326', '-projwin', *gdal_bounds]
+    subprocess.call(commands)
     return cropfile
 
-def calculate_index(nir, colorband, index):
-    outfile = nir.split('nir.tif')[0] + index + '.tif'
-    commands = ['gdal_calc.py', '-A', nir, '-B', colorband,
-                '--outfile={}'.format(outfile)]
+def calculate_index(nirpath, colorpath, index):
+    with rasterio.open(nirpath) as f:
+        nir = f.read().astype('float32')
+
+    with rasterio.open(colorpath) as f:
+        color = f.read().astype('float32')
+        profile = f.profile.copy()
+
     if index == 'ndvi':
-        commands += ['--calc=(A-B)/(A+B)']
+        computed = (nir - color)/(nir + color)
     elif index == 'ndwi':
-        commands += ['--calc=(B-A)/(A+B)']
+        computed = (color - nir)/(color + nir)
     else:
         raise ValueError('Landcover index not recognized.')
-    subprocess.call(commands)
+
+    profile.update({'count': 1, 'dtype': rasterio.float32})
+    outfile = nirpath.split('nir.tif')[0] + index + '.tif'
+    with rasterio.open(outfile, 'w', **profile) as f:
+        f.write(computed)
     return outfile
-    
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='Process Landsat surface reflectance tiles. Routine ' +
