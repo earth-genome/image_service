@@ -43,6 +43,7 @@ from utilities.geobox import geobox
 from utilities.geobox import geojsonio
 
 ALLOWED_BIT_DEPTHS = (8, 16)
+FILE_PATTERNS = ('*.tif', '*.TIF')
 
 def build_image(paths, outpath='./reduced.tif', **kwargs):
     """Produce one or more images from raw satellite image tiles.
@@ -125,7 +126,7 @@ def get_bit_depth(paths):
     for path in paths:
         with rasterio.open(path) as f:
             dtypes.append(f.profile['dtype'])
-            
+
     input_bit_depth = np.iinfo(next(iter(dtypes))).bits
     if not len(set(dtypes)) <= 1 or input_bit_depth not in ALLOWED_BIT_DEPTHS:
         
@@ -197,7 +198,12 @@ if __name__ == '__main__':
 
     # N.B. for gdalbuildvrt, if there is spatial overlap between files, 
     # content is fetched from files that appear later in the list.
-    tiles = glob.glob(os.path.join(args.tile_dir, '*.tif'))
+    tiles = []
+    for fp in FILE_PATTERNS:
+        tiles += glob.glob(os.path.join(args.tile_dir, fp))
+    if not tiles:
+        raise ValueError('No files {} found in directory {}'.format(
+            FILE_PATTERNS, args.tile_dir))
     tiles.sort()
     
     outpaths = build_image(tiles, **vars(args))
