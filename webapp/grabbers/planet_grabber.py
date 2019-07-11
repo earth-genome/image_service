@@ -2,6 +2,9 @@
 
 API ref: https://planetlabs.github.io/planet-client-python/index.html
 
+Because the Planet API enters the python namespace as planet, this module is 
+named planet_grabber.
+
 Class PlanetGrabber: Descendant of class base.ImageGrabber
 
 Usage with default specs: 

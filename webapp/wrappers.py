@@ -20,8 +20,8 @@ import os
 import redis
 
 from grabbers.base import loop
-from grabbers.dg_grabber import DGImageGrabber
-from grabbers.landsat.landsat_grabber import LandsatThumbnails
+from grabbers.dg import DGImageGrabber
+from grabbers.landsat import LandsatThumbnails
 from grabbers.planet_grabber import PlanetGrabber
 
 
