@@ -42,8 +42,8 @@ import rasterio
 current_dir = os.path.dirname(os.path.abspath(getsourcefile(lambda:0)))
 sys.path.insert(1, os.path.dirname(current_dir))
 import reduce_landsat
-from utilities.geobox import geobox
-from utilities.geobox import geojsonio
+from webapp.grabbers.utilities.geobox import geobox
+from webapp.grabbers.utilities.geobox import geojsonio
 
 INDICES = ['ndvi', 'ndwi']
 

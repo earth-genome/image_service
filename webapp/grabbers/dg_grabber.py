@@ -2,7 +2,7 @@
 
 API ref: http://gbdxtools.readthedocs.io/en/latest/index.html
 
-Class DGImageGrabber: Descendant of class grabber.ImageGrabber
+Class DGImageGrabber: Descendant of class base.ImageGrabber
 
 Usage with default specs: 
 
@@ -78,7 +78,7 @@ import gbdxtools  # Clash between Shapely/GEOS libraries. Import after shapely.
 import rasterio   # This too. See Issue #13.
 from rasterio.enums import ColorInterp
 
-import grabber 
+import base 
 from utilities.geobox import geobox
 from utilities.geobox import projections
 
@@ -103,7 +103,7 @@ KEYMAP = {
     'geometry': 'footprintWkt'
 }
     
-class DGImageGrabber(grabber.ImageGrabber):
+class DGImageGrabber(base.ImageGrabber):
     """Tool to pull DigitalGlobe imagery.
 
     External attributes and methods are defined in the parent ImageGrabber. 

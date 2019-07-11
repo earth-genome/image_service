@@ -22,8 +22,8 @@ import rasterio.features
 current_dir = os.path.dirname(os.path.abspath(getsourcefile(lambda:0)))
 sys.path.insert(1, os.path.dirname(current_dir))
 import pixel_limits
-from utilities.geobox import geojsonio
-from utilities.geobox import projections
+from webapp.grabbers.utilities.geobox import geojsonio
+from webapp.grabbers.utilities.geobox import projections
 
 def burn(geojson, geotiff):
     """Burn features in geojson into a container defined by existing geotiff."""
