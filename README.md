@@ -3,7 +3,7 @@
 
 This project establishes a web service for pulling satellite imagery from
 various providers. Links to available services and detailed instructions are given 
-at the primary web app [entry point](http://earthrise-imagery.herokuapp.com).
+at the primary Heroku [entry point](http://earthrise-imagery.herokuapp.com).
 
 There are also several tools available for local image processing: 
 * Manual_reprocessing: mosaicking and color correction for image tiles downloaded elsewhere.
