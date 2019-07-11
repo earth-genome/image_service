@@ -11,6 +11,7 @@ pyproj==1.9.5.1
 scikit-image==0.14.1
 tifffile==2018.11.28
 gbdxtools==0.16.0
+dask==0.20.1
 google-cloud-storage==1.13.1
 planet==1.2.0
 gunicorn==19.9.0
