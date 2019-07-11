@@ -26,7 +26,7 @@ docker-compose build
 docker-compose up
 ```
 
-To deploy to Heroku, from the top-level directory:
+To deploy to Heroku:
 
 ```bash
 heroku container:push --recursive -a earthrise-imagery
