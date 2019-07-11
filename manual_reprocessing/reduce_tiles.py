@@ -38,9 +38,9 @@ import rasterio
 
 current_dir = os.path.dirname(os.path.abspath(getsourcefile(lambda:0)))
 sys.path.insert(1, os.path.dirname(current_dir))
-from postprocessing import color
-from utilities.geobox import geobox
-from utilities.geobox import geojsonio
+from webapp.grabbers.postprocessing import color
+from webapp.grabbers.utilities.geobox import geobox
+from webapp.grabbers.utilities.geobox import geojsonio
 
 ALLOWED_BIT_DEPTHS = (8, 16)
 FILE_PATTERNS = ('*.tif', '*.TIF')

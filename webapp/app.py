@@ -14,13 +14,13 @@ from flask_restful import inputs
 import numpy as np
 from rq import Queue
 
-from grab_imagery.dg_grabber import KNOWN_IMAGE_SOURCES
-from grab_imagery.planet_grabber import KNOWN_ITEM_TYPES, KNOWN_ASSET_TYPES
-from grab_imagery.postprocessing.color import STYLES
-from grab_imagery.postprocessing.landcover import INDICES
-from grab_imagery.utilities.geobox import geobox
-import puller_wrappers
-from puller_wrappers import PROVIDER_CLASSES
+from grabbers.dg_grabber import KNOWN_IMAGE_SOURCES
+from grabbers.planet_grabber import KNOWN_ITEM_TYPES, KNOWN_ASSET_TYPES
+from grabbers.postprocessing.color import STYLES
+from grabbers.postprocessing.landcover import INDICES
+from grabbers.utilities.geobox import geobox
+import wrappers
+from wrappers import PROVIDER_CLASSES
 import worker
 
 q = Queue('default', connection=worker.connection, default_timeout=3600)
@@ -162,16 +162,16 @@ def pull():
 
     bbox = geobox.bbox_from_scale(lat, lon, scale)
     db_key = datetime.now().strftime('%Y%m%d%H%M%S%f')
-    puller_wrappers.connection.set(db_key, json.dumps('In progress.'))
+    wrappers.connection.set(db_key, json.dumps('In progress.'))
 
     if specs.get('thumbnails'):
         job = tnq.enqueue_call(
-            func=puller_wrappers.pull,
+            func=wrappers.pull,
             args=(db_key, provider, bbox),
             kwargs=specs)
     else:
         job = q.enqueue_call(
-            func=puller_wrappers.pull,
+            func=wrappers.pull,
             args=(db_key, provider, bbox),
             kwargs=specs)
 
@@ -202,10 +202,10 @@ def pull_by_id():
 
     bbox = geobox.bbox_from_scale(lat, lon, scale)
     db_key = datetime.now().strftime('%Y%m%d%H%M%S%f')
-    puller_wrappers.connection.set(db_key, json.dumps('In progress.'))
+    wrappers.connection.set(db_key, json.dumps('In progress.'))
 
     job = q.enqueue_call(
-        func=puller_wrappers.pull_by_id,
+        func=wrappers.pull_by_id,
         args=(db_key, provider, bbox, catalogID, item_type),
         kwargs=specs)
 
@@ -226,7 +226,7 @@ def get_links():
     if not key:
         return jsonify(msg), 400
 
-    return puller_wrappers.connection.get(key), 200
+    return wrappers.connection.get(key), 200
 
 # Argument parsing functions
 

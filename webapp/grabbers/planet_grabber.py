@@ -2,7 +2,7 @@
 
 API ref: https://planetlabs.github.io/planet-client-python/index.html
 
-Class PlanetGrabber: Descendant of class grabber.ImageGrabber
+Class PlanetGrabber: Descendant of class base.ImageGrabber
 
 Usage with default specs: 
 
@@ -58,7 +58,7 @@ import numpy as np
 from planet import api
 import shapely
 
-import grabber
+import base
 from postprocessing import gdal_routines
 
 KNOWN_ITEM_TYPES = ['PSScene4Band', 'PSScene3Band', 'PSOrthoTile',
@@ -105,7 +105,7 @@ KEYMAP = {
 }
 
 
-class PlanetGrabber(grabber.ImageGrabber):
+class PlanetGrabber(base.ImageGrabber):
     """Tool to pull Planet Labs imagery.
 
     External attributes and methods are defined in the parent ImageGrabber. 
