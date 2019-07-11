@@ -1,7 +1,8 @@
 aiohttp==3.4.4
 python-dateutil==2.7.5
 python-firebase==1.2
-numpy==1.13.3
+numpy==1.15.3
+scipy==1.1.0
 rasterio==1.0.22
 rio-color==1.0.0
 rio-hist==0.3.0
@@ -17,4 +18,3 @@ Flask==1.0.2
 flask_restful==0.3.6
 redis==2.10.6
 rq==0.12.0
-
