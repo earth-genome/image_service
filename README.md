@@ -2,27 +2,19 @@
 ## Image Service
 
 This project establishes a web service for pulling satellite imagery from
-various providers.
+various providers. Links to available services and detailed instructions are given 
+at the primary entry point[http://earthrise-imagery.herokuapp.com].
 
-Extensive usage notes are given at top of the main modules in webapp/grabbers:
-* Planet: planet_labs/planet_grabber.py
-* DigitalGlobe: digital_globe/dg_grabber.py
+There are also several tools available for local image processing: 
+* Manual_reprocessing: mosaicking and color correction for image tiles downloaded elsewhere.
+* Georeferencing: Conversions between vectors and rasters and a tool to restore georeferencing to Photoshopped images.
 
-Automated image mosaicking and color correction routines
-are in the postprocessing subpackage to webapp/grabbers.
-
-Manual mosaicking and color correction for images downloaded from
-elsewhere is available in the manual_reprocessing package.
-
-Routines to convert between vectors and rasters and to restore
-georeferencing are in the georeferencing package.
+Access to the satellite provider APIs is also available locally. See use notes in the modules in webapp/grabbers.
 
 ### Dependencies 
 
-Out-of-repo files .env and webapp/.google_config.json containing API
-keys for Digital Globe, Planet, and Google cloud storage.
-
-Our utilities repo as a submodule in webapp/grabbers. 
+* API keys in out-of-repo files .env and webapp/.google_config.json.
+* Our utilities repo as a submodule in webapp/grabbers. 
 
 ### Developing and deploying
 
