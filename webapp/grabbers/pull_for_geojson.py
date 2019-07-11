@@ -16,12 +16,12 @@ import sys
 
 import shapely
 
-import dg_grabber
-import grabber
+import base
+import dg
 import planet_grabber
 
 GRABBERS = {
-    'digital_globe': dg_grabber.DGImageGrabber,
+    'digital_globe': dg.DGImageGrabber,
     'planet': planet_grabber.PlanetGrabber
 }
 
@@ -101,7 +101,7 @@ if __name__ == '__main__':
     features_filename = kwargs.pop('features_filename')
     kwargs = {k:v for k,v in kwargs.items() if v is not None}
     image_grabber = GRABBERS[provider](**kwargs)
-    looped = grabber.loop(pull_for_geojson)
+    looped = base.loop(pull_for_geojson)
     outfile = looped(image_grabber, features_filename)
     print('Links to images are written in {}'.format(outfile))
 
