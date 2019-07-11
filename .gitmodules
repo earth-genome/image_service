@@ -1,1 +1,4 @@
 
+[submodule "webapp/grabbers/utilities"]
+	path = webapp/grabbers/utilities
+	url = https://github.com/earth-genome/utilities.git

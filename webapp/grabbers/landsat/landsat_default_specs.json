@@ -1,0 +1,11 @@
+{
+    "endDate": null,
+    "N_images": 1,
+    "skip_days": 90,
+    "min_skip": 30,
+    "write_styles": [
+	"landsat"
+    ],
+    "thumbnails": false,
+    "file_header": ""
+}
