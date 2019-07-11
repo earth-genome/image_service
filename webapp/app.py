@@ -14,7 +14,7 @@ from flask_restful import inputs
 import numpy as np
 from rq import Queue
 
-from grabbers.dg_grabber import KNOWN_IMAGE_SOURCES
+from grabbers.dg import KNOWN_IMAGE_SOURCES
 from grabbers.planet_grabber import KNOWN_ITEM_TYPES, KNOWN_ASSET_TYPES
 from grabbers.postprocessing.color import STYLES
 from grabbers.postprocessing.landcover import INDICES

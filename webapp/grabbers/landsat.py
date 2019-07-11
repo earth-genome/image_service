@@ -3,7 +3,7 @@
 This module differs from others in the package in that it pulls from the
 earthrise-assets web app instead of a provider directly. Nonetheless,
 and at some cost in internal logic of the code, it mirrors key structures
-of the other modules so it can be managed via puller_wrappers,
+of the other modules so it can be managed via wrappers.py,
 and ultimately, the earthrise-imagery web app. 
 
 Class LandsatThumbnails: A class to pull and color correct images.
@@ -12,21 +12,6 @@ Usage with default specs:
 > bbox = geobox.bbox_from_scale(-122.42, 37.77, 40.0)
 > lt = LandsatThumbnails()
 > lt(bbox)
-
-Catalog and image specs have defaults set in planet_default_specs.json, which,
-as of writing, takes form:
-{
-    "endDate": null,
-    "N_images": 1,
-    "skip_days": 90,
-    "min_skip": 30,  # Floor on skip_days, since scenes are 90-day composited.
-    "write_styles": [
-        "landsat_contrast"
-    ],
-    "thumbnails": false, # All Landsat images are thumbnail-size; if true, 
-        # only color-corrected (not raw) image(s) are returned
-    "file_header": ""
-}
 
 """
 
@@ -44,9 +29,8 @@ import skimage
 from postprocessing import color
 from utilities.geobox import geobox
 
-# Default file for catalog and image parameters:
 DEFAULT_SPECS_FILE = os.path.join(os.path.dirname(__file__),
-                                  'landsat_default_specs.json')
+                                  'default_specs.json')
 
 class LandsatThumbnails(object):
     """Pull Landsat thumbnails from the earthrise-assets web app.
@@ -60,14 +44,15 @@ class LandsatThumbnails(object):
     """
     def __init__(self,
                  app_url='http://earthrise-assets.herokuapp.com/nasa/image',
-                 specs_filename=DEFAULT_SPECS_FILE, **specs):
+                 specs_filename=DEFAULT_SPECS_FILE,
+                 default_styles_override=['landsat'],
+                 **specs):
 
         self.app_url = app_url
         with open(specs_filename, 'r') as f:
             self.specs = json.load(f)
+        self.specs['write_styles'] = default_styles_override
         self.specs.update(specs)
-        self.specs['skip_days'] = max(self.specs['skip_days'],
-                                      self.specs['min_skip'])
 
     def __call__(self, bbox):
         """Scheduling wrapper for async execution of grab()."""
