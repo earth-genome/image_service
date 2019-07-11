@@ -194,7 +194,7 @@ class DGImageGrabber(base.ImageGrabber):
                     daskimg = gbdxtools.CatalogImage(ID, **self.specs)
                     print('Retrieved ID {}'.format(ID))
                 except Exception as e:
-                    print('Exception: {}'.format(e))
+                    print('CatalogImage exception: {}'.format(e))
                     record = next(records, None)
                     continue
 
