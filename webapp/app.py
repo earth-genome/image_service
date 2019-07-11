@@ -26,6 +26,7 @@ import worker
 q = Queue('default', connection=worker.connection, default_timeout=3600)
 tnq = Queue('thumbnails', connection=worker.connection, default_timeout=900)
 app = Flask(__name__)
+app.config['JSON_SORT_KEYS'] = False
 
 
 # for help messaging
