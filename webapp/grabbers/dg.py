@@ -37,8 +37,7 @@ take form:
     "file_header": "",
     "offNadirAngle": null,   # (relation, angle), e.g. ('<', 10)
     "band_type": "MS",  # mulit-spectral
-    "pansharp_scale": 2.5,  # in km; used by _patch_geometric_specs(),
-        which sets pansharpen=True below this scale
+    "pansharpen": false, 
     "acomp": false,
     "override_proj": null, # any EPSG code, e.g. "EPSG:4326"; if null, a UTM
         projection is determined from the bbox
@@ -54,17 +53,6 @@ The parameter image_source is from
 The first three are are fairly comparable in resolution
 (.3-.5 meters/pixel if pansharpened) and are currently active.
 The latter two have resolution roughly half that and we decomissioned in 2015.
-
-Two parameters are determined within _patch_geometric_specs(self, bbox) and
-added to self.specs during the image pull:
-
-- pansharpen: True or False according to whether image is smaller or
-larger than pansharp_scale.
-
-- proj: In principle this could be any EPSG code, e.g. EPSG:4326, and can
-be set as such by setting override_proj='EPSG:4326'. Generically, here, it
-will be the Universal Transverse Mercator (UTM) projection appropriate for
-the bbox.
 
 """
 
@@ -182,7 +170,7 @@ class DGImageGrabber(base.ImageGrabber):
 
         Returns: A list of lists, each containing one record.
         """
-        self._patch_geometric_specs(bbox)
+        self.specs.update({'proj': self._get_projection(bbox)})
         scenes = []
         record = next(records, None)
         while record and len(scenes) < self.specs['N_images']:
@@ -210,21 +198,13 @@ class DGImageGrabber(base.ImageGrabber):
             len(scenes), self.specs['N_images']), flush=True)
         return scenes
 
-    def _patch_geometric_specs(self, bbox):
-        """Determine pansharpening and geoprojection."""
+    def _get_projection(self, bbox):
+        """Determine a geoprojection."""
         if self.specs['override_proj']:
-            proj = self.specs['override_proj']
+            return self.specs['override_proj']
         else:
             epsg = projections.get_utm_code(bbox.centroid.y, bbox.centroid.x)
-            proj = 'EPSG:{}'.format(epsg)
-            
-        pansharpen = self._check_highres(bbox)
-        self.specs.update({'proj': proj, 'pansharpen': pansharpen})
-
-    def _check_highres(self, bbox):
-        """Allow highest resolution when bbox smaller than pansharp_scale."""
-        size = np.mean(geobox.get_side_distances(bbox))
-        return True if size < self.specs['pansharp_scale'] else False
+            return 'EPSG:{}'.format(epsg)
     
     def _read_footprint(self, record):
         """Extract footprint in record as a shapely shape."""  
