@@ -31,7 +31,7 @@ app.config['JSON_SORT_KEYS'] = False
 
 # for help messaging
 EXAMPLE_ARGS = ('provider=digital_globe' +
-                '&lat=36.2553&lon=-112.6980' +
+                '&lat=37.8268&lon=-122.4227' +
                 '&start=2017-01-01&end=2018-01-01&clouds=10&N=1')
 
 ARGUMENTS = {
@@ -45,7 +45,7 @@ ARGUMENTS = {
     'min_intersect': 'Float in range [0, 1.0]',
     'write_styles': 'One or more of {}'.format(set(STYLES)),
     'indices': 'One or more of {}'.format(set(INDICES)),
-    'pansharp_scale': 'For DG: max scale for pansharpened images (in km)',
+    'pansharpen': 'For DG: True/False',
     'image_source': 'For DG: one or more of {}'.format(
         set(KNOWN_IMAGE_SOURCES)),
     'item_types': 'For Planet: one or more of {}'.format(set(KNOWN_ITEM_TYPES)),
@@ -149,7 +149,7 @@ def pull():
     }
     notes.update({'Allowed arguments': ARGUMENTS})
     msg = _help_msg(
-        request.base_url, EXAMPLE_ARGS + '&scale=.75&min_intersect=.9', notes)
+        request.base_url, EXAMPLE_ARGS + '&scale=.75&pansharpen=True', notes)
 
     try:
         provider = _parse_provider(request.args)
@@ -260,7 +260,7 @@ def _parse_specs(args):
         'min_intersect': args.get('min_intersect', type=float),
         'write_styles': args.getlist('write_styles'),
         'landcover_indices': args.getlist('indices'),
-        'pansharp_scale': args.get('pansharp_scale', type=float),
+        'pansharpen': args.get('pansharpen', type=inputs.boolean),
         'image_source': args.getlist('image_source'),
         'item_types': args.getlist('item_types'),
         'asset_type': args.get('asset_type'),
