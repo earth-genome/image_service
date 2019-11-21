@@ -14,7 +14,7 @@
     "file_header": "",
     "offNadirAngle": null,
     "band_type": "MS",
-    "pansharp_scale": 2.5,
+    "pansharpen": false,
     "acomp": false,
     "override_proj": null,
     "image_source": [
