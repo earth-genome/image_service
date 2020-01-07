@@ -23,8 +23,8 @@ import rasterio.features
 current_dir = os.path.dirname(os.path.abspath(getsourcefile(lambda:0)))
 sys.path.insert(1, os.path.dirname(current_dir))
 import pixel_limits
-from webapp.grabbers.utilities.geobox import geojsonio
-from webapp.grabbers.utilities.geobox import projections
+from webapp.geobox import geojsonio
+from webapp.geobox import projections
 
 def extract_shapes(geotiff, raster_vals=None, source_projection=False):
     """Extract vector shapes from geotiff.

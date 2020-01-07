@@ -9,7 +9,7 @@ Class PlanetGrabber: Descendant of class base.ImageGrabber
 
 Usage with default specs: 
 
-> from utilities.geobox import geobox
+> from geobox import geobox
 > bbox = geobox.bbox_from_scale(37.77, -122.42, 1.0)
 > g = PlanetGrabber()
 > g(bbox)
@@ -61,7 +61,7 @@ import numpy as np
 from planet import api
 import shapely
 
-import base
+from grabbers import base
 from postprocessing import gdal_routines
 
 KNOWN_ITEM_TYPES = ['PSScene4Band', 'PSScene3Band', 'PSOrthoTile',

@@ -26,8 +26,8 @@ import dateutil
 import numpy as np
 import skimage
 
+from geobox import geobox
 from postprocessing import color
-from utilities.geobox import geobox
 
 DEFAULT_SPECS_FILE = os.path.join(os.path.dirname(__file__),
                                   'default_specs.json')

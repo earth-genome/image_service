@@ -16,9 +16,10 @@ import sys
 
 import shapely
 
-import base
-import dg
-import planet_grabber
+from grabbers import base
+from grabbers import dg
+from grabbers import planet_grabber
+
 
 GRABBERS = {
     'digital_globe': dg.DGImageGrabber,
