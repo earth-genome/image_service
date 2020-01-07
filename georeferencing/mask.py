@@ -22,8 +22,8 @@ import rasterio.mask
 
 current_dir = os.path.dirname(os.path.abspath(getsourcefile(lambda:0)))
 sys.path.insert(1, os.path.dirname(current_dir))
-from webapp.grabbers.utilities.geobox import geojsonio
-from webapp.grabbers.utilities.geobox import projections
+from webapp.geobox import geojsonio
+from webapp.geobox import projections
 
 def mask(geotiff, geojson, **kwargs):
     """Mask geotiff with geojson features.

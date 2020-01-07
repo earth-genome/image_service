@@ -14,11 +14,11 @@ from flask_restful import inputs
 import numpy as np
 from rq import Queue
 
+from geobox import geobox
 from grabbers.dg import KNOWN_IMAGE_SOURCES
 from grabbers.planet_grabber import KNOWN_ITEM_TYPES, KNOWN_ASSET_TYPES
-from grabbers.postprocessing.color import STYLES
-from grabbers.postprocessing.landcover import INDICES
-from grabbers.utilities.geobox import geobox
+from postprocessing.color import STYLES
+from postprocessing.landcover import INDICES
 import wrappers
 from wrappers import PROVIDER_CLASSES
 import worker

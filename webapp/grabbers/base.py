@@ -2,7 +2,7 @@
 
 External class methods are defined in the template class ImageGrabber, here,
 and provider-dependent details and usage examples expressed in its descendants 
-dg_grabber.DGImageGrabber and planet_grabber.PlanetGrabber.
+dg.DGImageGrabber and planet_grabber.PlanetGrabber.
 
 """
  
@@ -17,12 +17,12 @@ import sys
 import dateutil
 import shapely.ops
 
+import cloud_storage
+from geobox import geobox
 from postprocessing import color
 from postprocessing import gdal_routines
 from postprocessing import landcover
 from postprocessing import resample
-from utilities import cloud_storage
-from utilities.geobox import geobox
 
 SPECS_FILE = os.path.join(os.path.dirname(__file__), 'default_specs.json')
 

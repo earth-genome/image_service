@@ -6,7 +6,7 @@ Class DGImageGrabber: Descendant of class base.ImageGrabber
 
 Usage with default specs: 
 
-> from utilities.geobox import geobox
+> from geobox import geobox
 > bbox = geobox.bbox_from_scale(37.77, -122.42, 1.0)
 > g = DGImageGrabber()
 > g(bbox)
@@ -66,9 +66,9 @@ import gbdxtools  # Clash between Shapely/GEOS libraries. Import after shapely.
 import rasterio   # This too. See Issue #13.
 from rasterio.enums import ColorInterp
 
-import base 
-from utilities.geobox import geobox
-from utilities.geobox import projections
+from grabbers import base 
+from geobox import geobox
+from geobox import projections
 
 KNOWN_IMAGE_SOURCES = ['WORLDVIEW02', 'WORLDVIEW03_VNIR', 'GEOEYE01',
                       'QUICKBIRD02', 'IKONOS']

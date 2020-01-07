@@ -44,8 +44,8 @@ import sys
 
 current_dir = os.path.dirname(os.path.abspath(getsourcefile(lambda:0)))
 sys.path.insert(1, os.path.dirname(current_dir))
-from webapp.grabbers.utilities.geobox import geobox
-from webapp.grabbers.utilities.geobox import geojsonio
+from webapp.geobox import geobox
+from webapp.geobox import geojsonio
 
 WHITE_PT = 3500
 BIT_DEPTH = 16
