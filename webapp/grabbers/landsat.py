@@ -55,12 +55,12 @@ class LandsatThumbnails(object):
         self.specs.update(specs)
 
     def __call__(self, bbox):
-        """Scheduling wrapper for async execution of grab()."""
+        """Scheduling wrapper for async execution of pull()."""
         loop = asyncio.get_event_loop()
-        recs_written = loop.run_until_complete(self.grab(bbox))
+        recs_written = loop.run_until_complete(self.pull(bbox))
         return recs_written
 
-    async def grab(self, bbox):
+    async def pull(self, bbox):
         """Grab the most recent available images consistent with specs.
     
         Argument: bbox: a shapely box
