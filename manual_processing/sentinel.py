@@ -4,13 +4,15 @@ Depends on installed command line tools:
    aws cli, and optionally, a configured AWS profile; and
    rio (rasterio).
 
-External functions: download, jp2_to_geotiff
+External functions: download, jp2_to_geotiff, mask_merge_cog
 """
 
 import os
 import subprocess
 
 import _env
+import cog
+from georeferencing import mask
 
 AWS_GRAB = 'aws s3 cp s3://sentinel-s2-{level}/tiles/{utm_zone}/{lat_band}/{grid_square}/{year}/{month}/{day}/0/R10m/TCI.jp2 {outpath} --request-payer'
 
@@ -49,7 +51,7 @@ def download(sentinel_level, zones, dates, redownload=False,
             outpaths.append(outpath)
     return outpaths
 
-def jp2_to_geotiff(jp2, tile_size=None, overwrite=False):
+def jp2_to_geotiff(jp2, tile_size=None, overwrite=False, clean=False):
     """Convert a JPEG2000 into a tiled GeoTiff.
 
     Arguments: 
@@ -74,4 +76,29 @@ def jp2_to_geotiff(jp2, tile_size=None, overwrite=False):
         else:
             return geotiff
     subprocess.call(commands)
+    if clean:
+        os.remove(jp2)
     return geotiff
+
+def mask_merge_cog(jp2s, tile_size=512, srcnodata=0, geojson_mask=None,
+                   clean=False, **kwargs):
+    """Mask, merge, and cog a list of Sentinel jp2s.
+
+    Arguments:
+        jp2s: List of paths to jp2 files
+        tile_size: Intermediate geotiff tile_size
+        srcnodata: An override nodata value for the source imagery
+        geojson_mask: Path to a GeoJSON to apply as mask 
+        clean: bool: To delete input and intermediate files after processing
+        Optional **kwargs to pass to cog.build_local
+
+    Returns: Path to a COG
+    """
+    geotiffs = [jp2_to_geotiff(jp2, tile_size=tile_size, clean=clean)
+                    for jp2 in jp2s]
+    if geojson_mask:
+        geotiffs = [mask.mask(g, geojson_mask, nodata=srcnodata)
+                        for g in geotiffs]
+    cogged = cog.build_local(geotiffs, srcnodata=srcnodata, clean=clean,
+                             tile_size=tile_size, **kwargs)
+    return cogged
