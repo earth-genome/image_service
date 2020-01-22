@@ -32,18 +32,16 @@ The routine outputs a Float32 grayscale image for each scene.
 
 import argparse
 import glob
-from inspect import getsourcefile
 import os
 import subprocess
 import sys
 
 import rasterio
 
-current_dir = os.path.dirname(os.path.abspath(getsourcefile(lambda:0)))
-sys.path.insert(1, os.path.dirname(current_dir))
+import _env
 import reduce_landsat
-from webapp.geobox import geobox
-from webapp.geobox import geojsonio
+from geobox import geobox
+from geobox import geojsonio
 
 INDICES = ['ndvi', 'ndwi']
 

@@ -36,16 +36,14 @@ The routine outputs one geotiff for each processed scene.
 
 import argparse
 import glob
-from inspect import getsourcefile
 import json
 import os
 import subprocess
 import sys
 
-current_dir = os.path.dirname(os.path.abspath(getsourcefile(lambda:0)))
-sys.path.insert(1, os.path.dirname(current_dir))
-from webapp.geobox import geobox
-from webapp.geobox import geojsonio
+import _env
+from geobox import geobox
+from geobox import geojsonio
 
 WHITE_PT = 3500
 BIT_DEPTH = 16
