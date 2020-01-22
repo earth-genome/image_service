@@ -9,15 +9,13 @@ Requires: gdal_translate
 """
 
 import argparse
-from inspect import getsourcefile
 import os
 import subprocess
 import sys
 
-current_dir = os.path.dirname(os.path.abspath(getsourcefile(lambda:0)))
-sys.path.insert(1, os.path.dirname(current_dir))
-from webapp.geobox import geobox
-from webapp.geobox import geojsonio
+import _env
+from geobox import geobox
+from geobox import geojsonio
 
 
 def crop(geotiff, geojson, outpath):

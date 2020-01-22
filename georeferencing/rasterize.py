@@ -11,7 +11,6 @@ Output: A file features-burned.tif.
 
 """
 import argparse
-from inspect import getsourcefile
 import json
 import os
 import sys
@@ -19,11 +18,10 @@ import sys
 import rasterio
 import rasterio.features
 
-current_dir = os.path.dirname(os.path.abspath(getsourcefile(lambda:0)))
-sys.path.insert(1, os.path.dirname(current_dir))
+import _env
 import pixel_limits
-from webapp.geobox import geojsonio
-from webapp.geobox import projections
+from geobox import geojsonio
+from geobox import projections
 
 def burn(geojson, geotiff):
     """Burn features in geojson into a container defined by existing geotiff."""

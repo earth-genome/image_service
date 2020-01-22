@@ -28,7 +28,6 @@ To re-mosaic tiles already reduced, again do not supply a -s option.
 
 import argparse
 import glob
-from inspect import getsourcefile
 import os
 import subprocess
 import sys
@@ -36,11 +35,10 @@ import sys
 import numpy as np
 import rasterio
 
-current_dir = os.path.dirname(os.path.abspath(getsourcefile(lambda:0)))
-sys.path.insert(1, os.path.dirname(current_dir))
-from webapp.postprocessing import color
-from webapp.geobox import geobox
-from webapp.geobox import geojsonio
+import _env
+from postprocessing import color
+from geobox import geobox
+from geobox import geojsonio
 
 ALLOWED_BIT_DEPTHS = (8, 16)
 FILE_PATTERNS = ('*.tif', '*.TIF')

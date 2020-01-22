@@ -12,7 +12,6 @@ Output: A file img-masked.tif.
 
 """
 import argparse
-from inspect import getsourcefile
 import json
 import os
 import sys
@@ -20,10 +19,9 @@ import sys
 import rasterio
 import rasterio.mask
 
-current_dir = os.path.dirname(os.path.abspath(getsourcefile(lambda:0)))
-sys.path.insert(1, os.path.dirname(current_dir))
-from webapp.geobox import geojsonio
-from webapp.geobox import projections
+import _env
+from geobox import geojsonio
+from geobox import projections
 
 def mask(geotiff, geojson, **kwargs):
     """Mask geotiff with geojson features.
