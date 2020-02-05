@@ -164,8 +164,10 @@ def mask_merge_cog(jp2s, tile_size=512, srcnodata=0, geojson_mask=None,
     geotiffs = [jp2_to_geotiff(jp2, tile_size=tile_size, clean=clean)
                     for jp2 in jp2s]
     if geojson_mask:
-        geotiffs = [mask.mask(g, geojson_mask, nodata=srcnodata)
-                        for g in geotiffs]
-    cogged = cog.build_local(geotiffs, srcnodata=srcnodata, clean=clean,
+        masked = [mask.mask(g, geojson_mask, clean=clean, nodata=srcnodata)
+                      for g in geotiffs]
+    else:
+        masked = geotiffs
+    cogged = cog.build_local(masked, srcnodata=srcnodata, clean=clean,
                              tile_size=tile_size, **kwargs)
     return cogged
