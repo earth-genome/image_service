@@ -2,8 +2,8 @@
 
 In addition to packages in requirements.txt, this module depends on:
     A default configured AWS cli profile;
-    Sen2Cor, aliased to a bash function Sen2Cor that takes a SAFE directory 
-       as sole argument.
+    Sen2Cor, aliased in .bashrc to a function Sen2Cor that takes a SAFE 
+        directory as sole argument.
 
 External functions: 
     download, download_and_Sen2Cor, jp2_to_geotiff, mask_merge_cog
@@ -80,8 +80,9 @@ def download_and_Sen2Cor(date, zones, aws_idx=0, redownload=False, clean=False,
             safe_format=True)
         if not os.path.exists(safepath) or redownload:
             req.save_data()
-            
-        subprocess.call(['Sen2Cor', safepath])
+
+        commands = '/bin/bash -i -c Sen2Cor {}'.format(safepath).split()
+        subprocess.call(commands)
         outpaths.append(_extract_10mTCI(date, zone, dest_dir))
         if clean:
             shutil.rmtree(safepath)
@@ -92,17 +93,21 @@ def _extract_10mTCI(date, zone, dest_dir):
 
     Returns: New path to the jp2 file.
     """
-    
-    for root, dirs, _ in os.walk(dest_dir):
+    l2a_dir, outpath = None, None
+    for dirpath, dirs, _ in os.walk(dest_dir):
         for d in dirs:
             if ''.join(date.split('-')) in d and zone in d and 'MSIL2A' in d:
-                l2a_dir = os.path.join(root, d)
-    outpath = os.path.join(dest_dir, 'Sentinel_{}TCI{}_{}.jp2'.format(
-        'l2a', date, zone))
-    for root, _, files in os.walk(l2a_dir):
+                l2a_dir = os.path.join(dirpath, d)
+    if not l2a_dir:
+        return
+    
+    for dirpath, _, files in os.walk(l2a_dir):
         for f in files: 
             if 'TCI_10m.jp2' in f:
-                os.rename(os.path.join(root, f), outpath)
+                outpath = os.path.join(
+                    dest_dir,
+                    'Sentinel_{}TCI{}_{}.jp2'.format('l2a', date, zone))
+                os.rename(os.path.join(dirpath, f), outpath)
     return outpath
                 
 def jp2_to_geotiff(jp2, tile_size=None, overwrite=False, clean=False):
@@ -124,7 +129,7 @@ def jp2_to_geotiff(jp2, tile_size=None, overwrite=False, clean=False):
                     '--co BLOCKXSIZE={} --co BLOCKYSIZE={} '
                     '{} {}'.format(tile_size, tile_size, jp2, geotiff)).split()
     else:
-        commands = ('rio convert {} {}'.format(jp2, geotiff)).split()
+        commands = 'rio convert {} {}'.format(jp2, geotiff).split()
     if os.path.exists(geotiff):
         if overwrite:
             os.remove(geotiff)
