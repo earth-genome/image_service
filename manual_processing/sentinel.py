@@ -72,7 +72,11 @@ def download_and_Sen2Cor(date, zones, aws_idx=0, redownload=False, clean=False,
     """
     outpaths = []
     for zone in zones:
-        prod_id = sentinelhub.AwsTile(zone, date, aws_idx).get_product_id()
+        try: 
+            prod_id = sentinelhub.AwsTile(zone, date, aws_idx).get_product_id()
+        except sentinelhub.DownloadFailedException as e:
+            print(repr(e))
+            continue
         safepath = os.path.join(dest_dir, prod_id + '.SAFE')
         req = sentinelhub.AwsProductRequest(
             product_id=prod_id, tile_list=[zone], data_folder=dest_dir,
@@ -81,7 +85,7 @@ def download_and_Sen2Cor(date, zones, aws_idx=0, redownload=False, clean=False,
             try:
                 req.save_data()
             except sentinelhub.DownloadFailedException as e:
-                print('{}\nContinuing...'.format(repr(e)))
+                print(repr(e))
 
         subprocess.call(['L2A_Process', safepath])
         outpaths.append(_extract_10mTCI(date, zone, dest_dir))
