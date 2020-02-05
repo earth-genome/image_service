@@ -18,3 +18,6 @@ Flask==1.0.2
 flask_restful==0.3.6
 redis==2.10.6
 rq==0.12.0
+rio-cogeo==1.1.5
+awscli==1.16.93
+sentinelhub==2.6.1

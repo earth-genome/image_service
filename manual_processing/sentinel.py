@@ -1,56 +1,110 @@
 """Tools for bulk download of Sentinel-2 imagery from its s3 bucket.
 
-Depends on installed command line tools: 
-   aws cli, and optionally, a configured AWS profile; and
-   rio (rasterio).
+In addition to packages in requirements.txt, this module depends on:
+    A default configured AWS cli profile;
+    Sen2Cor, aliased to a bash function Sen2Cor that takes a SAFE directory 
+       as sole argument.
 
-External functions: download, jp2_to_geotiff, mask_merge_cog
+External functions: 
+    download, download_and_Sen2Cor, jp2_to_geotiff, mask_merge_cog
 """
 
 import os
+import shutil
 import subprocess
+
+import sentinelhub
 
 import _env
 import cog
 from georeferencing import mask
 
-AWS_GRAB = 'aws s3 cp s3://sentinel-s2-{level}/tiles/{utm_zone}/{lat_band}/{grid_square}/{year}/{month}/{day}/0/R10m/TCI.jp2 {outpath} --request-payer'
+AWS_GRAB = 'aws s3 cp s3://sentinel-s2-{level}/tiles/{utm_zone}/{lat_band}/{grid_square}/{year}/{month}/{day}/{aws_idx}/R10m/TCI.jp2 {outpath} --request-payer'
 
-def download(sentinel_level, zones, dates, redownload=False,
-             dest_dir=os.path.join(_env.base_dir, 'tmp'), aws_profile=None):
+DEST_DIR = os.path.join(_env.base_dir, 'tmp')
+if not os.path.exists(DEST_DIR):
+    os.mkdir(DEST_DIR)
+
+def download(level, date, zones, aws_idx=0, redownload=False,
+             dest_dir=DEST_DIR):
     """Download Sentinel-2 TCI imagery.
 
     Arguments: 
-        sentinel_level: 'l1c' or 'l2a'
+        level: Sentinel processing level, 'l1c' or 'l2a'
+        date: sensing date in isoformat, 'YYYY-MM-DD'
         zones: list of UTM grid zones of form '19NLJ'
-        dates: list of sensing dates in isoformat, 'YYYYMMDD'
+        aws_idx: The last number in the s3 file path for the relevant tile(s).
         redownload: bool: Force redownload of image even if path exists.
-        aws_profile: An AWS profile for a logged-in user
+        dest_dir: Path to directory to write images.
+
+    Returns: List of paths to downloaded images.
     """
     outpaths = []
-    for date in dates:
-        payload = {
-            'level': sentinel_level.lower(),
-            'year': date[:4],
-            'month': date[4:6].lstrip('0'),
-            'day': date[6:].lstrip('0')
-        }
-        for zone in zones:
-            outpath = os.path.join(dest_dir, '{}{}TCI_{}{}.jp2'.format(
-                sentinel_level, '-'.join(dates), zone, date))
-            payload.update({
-                'utm_zone': zone[:2],
-                'lat_band': zone[2:3],
-                'grid_square': zone[3:]
-            })
-            if not os.path.exists(outpath) or redownload:
-                commands = AWS_GRAB.format(outpath=outpath, **payload).split()
-                if aws_profile:
-                    commands += ['--profile', aws_profile]
-                subprocess.call(commands)
-            outpaths.append(outpath)
+    payload = {'level': level.lower(), 'aws_idx': aws_idx}
+    payload.update({k:v.split('0') for k,v in
+                        zip(['year', 'month', 'day'], date.split('-'))})
+    for zone in zones:
+        outpath = os.path.join(dest_dir, 'Sentinel_{}TCI{}_{}.jp2'.format(
+            level, date, zone))
+        payload.update({
+            'utm_zone': zone[:2],
+            'lat_band': zone[2:3],
+            'grid_square': zone[3:],
+        })
+        if not os.path.exists(outpath) or redownload:
+            commands = AWS_GRAB.format(outpath=outpath, **payload).split()
+            subprocess.call(commands)
+        outpaths.append(outpath)
     return outpaths
 
+def download_and_Sen2Cor(date, zones, aws_idx=0, redownload=False, clean=False,
+                         dest_dir=DEST_DIR):
+    """Download Sentinel-2 Level-1C imagery and process to Level-2A.
+
+    Arguments: 
+        date: sensing date in isoformat, 'YYYY-MM-DD'
+        zones: list of UTM grid zones of form '19NLJ'
+        aws_idx: The last number in the s3 file path for the relevant tile(s).
+        redownload: bool: Force redownload of image even if path exists.
+        clean: bool: To delete input and intermediate files after processing
+        dest_dir: Path to directory to write images.
+
+    Returns: List of paths to downloaded images.
+    """
+    outpaths = []
+    for zone in zones:
+        prod_id = sentinelhub.AwsTile(zone, date, aws_idx).get_product_id()
+        safepath = prod_id + '.SAFE'
+        req = sentinelhub.AwsProductRequest(
+            product_id=prod_id, tile_list=list(zone), data_folder=dest_dir,
+            safe_format=True)
+        if not os.path.exists(safepath) or redownload:
+            req.save_data()
+            
+        subprocess.call(['Sen2Cor', safepath])
+        outpaths.append(_extract_10mTCI(date, zone, dest_dir))
+        if clean:
+            shutil.rmtree(safepath)
+    return outpaths
+
+def _extract_10mTCI(date, zone, dest_dir):
+    """Extract the 10m TCI JPEG2000 from the Level-2A SAFE directory.
+
+    Returns: New path to the jp2 file.
+    """
+    
+    for root, dirs, _ in os.walk(dest_dir):
+        for d in dirs:
+            if ''.join(date.split('-')) in d and zone in d and 'MSIL2A' in d:
+                l2a_dir = os.path.join(root, d)
+    outpath = os.path.join(dest_dir, 'Sentinel_{}TCI{}_{}.jp2'.format(
+        'l2a', date, zone))
+    for root, _, files in os.walk(l2a_dir):
+        for f in files: 
+            if 'TCI_10m.jp2' in f:
+                os.rename(os.path.join(root, f), outpath)
+    return outpath
+                
 def jp2_to_geotiff(jp2, tile_size=None, overwrite=False, clean=False):
     """Convert a JPEG2000 into a tiled GeoTiff.
 
@@ -60,6 +114,7 @@ def jp2_to_geotiff(jp2, tile_size=None, overwrite=False, clean=False):
             if None, a striped geotiff will be written instead
         overwrite: bool: To replace an existing .tif file with the same 
             prefix as the jp2.
+        clean: bool: To delete input and intermediate files after processing
 
     Returns: Path to the geotiff
     """
