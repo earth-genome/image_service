@@ -78,7 +78,10 @@ def download_and_Sen2Cor(date, zones, aws_idx=0, redownload=False, clean=False,
             product_id=prod_id, tile_list=[zone], data_folder=dest_dir,
             safe_format=True)
         if not os.path.exists(safepath) or redownload:
-            req.save_data()
+            try:
+                req.save_data()
+            except sentinelhub.DownloadFailedException as e:
+                print('{}\nContinuing...'.format(repr(e)))
 
         subprocess.call(['L2A_Process', safepath])
         outpaths.append(_extract_10mTCI(date, zone, dest_dir))
