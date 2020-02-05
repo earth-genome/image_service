@@ -88,12 +88,12 @@ def download_and_Sen2Cor(date, zones, aws_idx=0, redownload=False, clean=False,
                 print(repr(e))
 
         subprocess.call(['L2A_Process', safepath])
-        outpaths.append(_extract_10mTCI(date, zone, dest_dir))
+        outpaths.append(_extract_10mTCI(date, zone, dest_dir, clean=clean))
         if clean:
             shutil.rmtree(safepath)
     return outpaths
 
-def _extract_10mTCI(date, zone, dest_dir):
+def _extract_10mTCI(date, zone, dest_dir, clean=False):
     """Extract the 10m TCI JPEG2000 from the Level-2A SAFE directory.
 
     Returns: New path to the jp2 file.
@@ -113,6 +113,8 @@ def _extract_10mTCI(date, zone, dest_dir):
                     dest_dir,
                     'Sentinel_{}TCI{}_{}.jp2'.format('l2a', date, zone))
                 os.rename(os.path.join(dirpath, f), outpath)
+    if clean:
+        shutil.rmtree(l2a_dir)
     return outpath
                 
 def jp2_to_geotiff(jp2, tile_size=None, overwrite=False, clean=False):
