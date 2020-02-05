@@ -76,7 +76,7 @@ def download_and_Sen2Cor(date, zones, aws_idx=0, redownload=False, clean=False,
         prod_id = sentinelhub.AwsTile(zone, date, aws_idx).get_product_id()
         safepath = prod_id + '.SAFE'
         req = sentinelhub.AwsProductRequest(
-            product_id=prod_id, tile_list=list(zone), data_folder=dest_dir,
+            product_id=prod_id, tile_list=[zone], data_folder=dest_dir,
             safe_format=True)
         if not os.path.exists(safepath) or redownload:
             req.save_data()
