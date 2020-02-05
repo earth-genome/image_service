@@ -53,7 +53,7 @@ def download(level, date, zones, aws_idx=0, redownload=False,
         if not os.path.exists(outpath) or redownload:
             commands = AWS_GRAB.format(outpath=outpath, **payload).split()
             subprocess.call(commands)
-        outpaths.append(outpath)
+            outpaths.append(outpath)
     return outpaths
 
 def download_and_Sen2Cor(date, zones, aws_idx=0, redownload=False, clean=False,
