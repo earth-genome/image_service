@@ -1,9 +1,8 @@
 """Tools for bulk download of Sentinel-2 imagery from its s3 bucket.
 
 In addition to packages in requirements.txt, this module depends on:
-    A default configured AWS cli profile;
-    Sen2Cor, aliased in .bashrc to a function Sen2Cor that takes a SAFE 
-        directory as sole argument.
+    A configured default AWS cli profile;
+    Sen2Cor, with the L2A_Process linked to somewhere in the user $PATH.
 
 External functions: 
     download, download_and_Sen2Cor, jp2_to_geotiff, mask_merge_cog
@@ -81,8 +80,7 @@ def download_and_Sen2Cor(date, zones, aws_idx=0, redownload=False, clean=False,
         if not os.path.exists(safepath) or redownload:
             req.save_data()
 
-        commands = '/bin/bash -i -c Sen2Cor {}'.format(safepath).split()
-        subprocess.call(commands)
+        subprocess.call(['L2A_Process', safepath])
         outpaths.append(_extract_10mTCI(date, zone, dest_dir))
         if clean:
             shutil.rmtree(safepath)
