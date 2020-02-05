@@ -40,7 +40,7 @@ def download(level, date, zones, aws_idx=0, redownload=False,
     """
     outpaths = []
     payload = {'level': level.lower(), 'aws_idx': aws_idx}
-    payload.update({k:v.split('0') for k,v in
+    payload.update({k:v.lstrip('0') for k,v in
                         zip(['year', 'month', 'day'], date.split('-'))})
     for zone in zones:
         outpath = os.path.join(dest_dir, 'Sentinel_{}TCI{}_{}.jp2'.format(
