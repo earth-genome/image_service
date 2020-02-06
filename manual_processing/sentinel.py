@@ -98,6 +98,10 @@ def download_and_Sen2Cor(date, zones, aws_idx=0, redownload=False, clean=False,
 def _extract_10mTCI(date, zone, dest_dir, clean=False):
     """Extract the 10m TCI JPEG2000 from the Level-2A SAFE directory.
 
+    Note: This breaks after Sen2Cor processing of imagery with aws_idx!=0, 
+        which puts imagery in a folder labeled by ingest date rather than 
+        sensing date.
+
     Returns: New path to the jp2 file.
     """
     l2a_dir, outpath = None, None
