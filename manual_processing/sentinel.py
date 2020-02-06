@@ -63,7 +63,9 @@ def download_and_Sen2Cor(date, zones, aws_idx=0, redownload=False, clean=False,
     Arguments: 
         date: sensing date in isoformat, 'YYYY-MM-DD'
         zones: list of UTM grid zones of form '19NLJ'
-        aws_idx: The last number in the s3 file path for the relevant tile(s).
+        aws_idx: A version number on the imagery and the last number in the s3
+            file path. Typically it should be 0, but in at least one instance 
+            Sen2Cor failed on version 0 but succeeded on version 1. 
         redownload: bool: Force redownload of image even if path exists.
         clean: bool: To delete input and intermediate files after processing
         dest_dir: Path to directory to write images.
