@@ -80,9 +80,10 @@ def download_and_Sen2Cor(date, zones, aws_idx=0, redownload=False, clean=False,
         except sentinelhub.DownloadFailedException as e:
             print(repr(e))
             continue
+        
         zone_dir = os.path.join(dest_dir,
                                 zone + datetime.datetime.now().isoformat())
-        if no os.path.exists(zone_dir):
+        if not os.path.exists(zone_dir):
             os.mkdir(zone_dir)
         safepath = os.path.join(zone_dir, prod_id + '.SAFE')
         req = sentinelhub.AwsProductRequest(
