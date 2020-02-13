@@ -8,6 +8,7 @@ External functions:
     download, download_and_Sen2Cor, jp2_to_geotiff, mask_merge_cog
 """
 
+import datetime
 import os
 import shutil
 import subprocess
@@ -79,9 +80,13 @@ def download_and_Sen2Cor(date, zones, aws_idx=0, redownload=False, clean=False,
         except sentinelhub.DownloadFailedException as e:
             print(repr(e))
             continue
-        safepath = os.path.join(dest_dir, prod_id + '.SAFE')
+        zone_dir = os.path.join(dest_dir,
+                                zone + datetime.datetime.now().isoformat())
+        if no os.path.exists(zone_dir):
+            os.mkdir(zone_dir)
+        safepath = os.path.join(zone_dir, prod_id + '.SAFE')
         req = sentinelhub.AwsProductRequest(
-            product_id=prod_id, tile_list=[zone], data_folder=dest_dir,
+            product_id=prod_id, tile_list=[zone], data_folder=zone_dir,
             safe_format=True)
         if not os.path.exists(safepath) or redownload:
             try:
@@ -90,37 +95,23 @@ def download_and_Sen2Cor(date, zones, aws_idx=0, redownload=False, clean=False,
                 print(repr(e))
 
         subprocess.call(['L2A_Process', safepath])
-        outpaths.append(_extract_10mTCI(date, zone, dest_dir, clean=clean))
+        outpaths.append(_extract_10mTCI(date, zone, dest_dir, zone_dir))
         if clean:
-            shutil.rmtree(safepath)
+            shutil.rmtree(zone_dir)
     return outpaths
 
-def _extract_10mTCI(date, zone, dest_dir, clean=False):
+def _extract_10mTCI(date, zone, dest_dir, zone_dir):
     """Extract the 10m TCI JPEG2000 from the Level-2A SAFE directory.
 
-    Note: This breaks after Sen2Cor processing of imagery with aws_idx!=0, 
-        which puts imagery in a folder labeled by ingest date rather than 
-        sensing date.
-
     Returns: New path to the jp2 file.
-    """
-    l2a_dir, outpath = None, None
-    for dirpath, dirs, _ in os.walk(dest_dir):
-        for d in dirs:
-            if ''.join(date.split('-')) in d and zone in d and 'MSIL2A' in d:
-                l2a_dir = os.path.join(dirpath, d)
-    if not l2a_dir:
-        return
-    
-    for dirpath, _, files in os.walk(l2a_dir):
+    """ 
+    for dirpath, _, files in os.walk(zone_dir):
         for f in files: 
             if 'TCI_10m.jp2' in f:
                 outpath = os.path.join(
                     dest_dir,
                     'Sentinel_{}TCI{}_{}.jp2'.format('l2a', date, zone))
                 os.rename(os.path.join(dirpath, f), outpath)
-    if clean:
-        shutil.rmtree(l2a_dir)
     return outpath
                 
 def jp2_to_geotiff(jp2, tile_size=None, overwrite=False, clean=False):
