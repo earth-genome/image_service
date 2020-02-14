@@ -1,13 +1,6 @@
 """Wrapper to extract georeferenced vector shapes from a geotiff.  
 
-The extraction is done by the rasterio.features module. The wrapper accepts
-GeoJSON features and an existing geotiff as input. The geotiff defines a 
-model for a container (raster extent, projection, dtype, etc.) into which 
-the features are burned. (The input geotiff is not modified.)
-
-Usage: rasterize.py feature_collection.json model_geotiff.tif
-
-Output: A file features-burned.tif.
+External functions: extract_shapes, extract_valid
 
 """
 import argparse
@@ -18,11 +11,15 @@ import sys
 import numpy as np
 import rasterio
 import rasterio.features
+import shapely.geometry
 
 import _env
-import pixel_limits
 from geobox import geojsonio
 from geobox import projections
+import pixel_limits
+
+ESSENTIAL_PROFILE = ['driver', 'dtype', 'width', 'height', 'crs', 'transform',
+                         'interleave']
 
 def extract_shapes(geotiff, raster_vals=None, source_projection=False):
     """Extract vector shapes from geotiff.
@@ -70,7 +67,62 @@ def extract_shapes(geotiff, raster_vals=None, source_projection=False):
 
     return geojson
 
+def extract_valid(geotiff, nodata=0, smoothing=.001):
+    """Get a smoothed vector boundary of valid data values in a GeoTiff.
+
+    Arguments:
+        geotiff: Path to a GeoTiff
+        nodata: Integer value of no-data pixels
+        smoothing: Float passed to shapely object.simplify(). 
+            Larger values result in smoother features. If zero, no smoothing
+            is applied.
+
+    Returns: Path to a GeoJSON
+    """
+    black_white = _write_black_white(geotiff, nodata)
+    full_geojson = extract_shapes(black_white)
     
+    with open(full_geojson) as f:
+        boundary = json.load(f)
+    if smoothing:
+        boundary = _simplify(boundary, smoothing)
+    
+    boundary_file = geotiff.split('.tif')[0] + '-boundary.json'
+    with open(boundary_file, 'w') as f:
+        json.dump(boundary, f)
+        
+    os.remove(full_geojson)
+    os.remove(black_white)
+    return boundary_file
+
+def _write_black_white(geotiff, nodata):
+    """Write a new geotiff with valid as white, nodata values as black."""
+    with rasterio.open(geotiff) as f:
+        img = f.read()
+        prof = {k:v for k,v in f.profile.items() if k in ESSENTIAL_PROFILE}
+
+    prof.update({'count': 1})
+    pmax = pixel_limits.get_max(prof['dtype'])
+    black_white = np.all(img==nodata, axis=0).astype(prof['dtype'])
+    black_white = (pmax - pmax*black_white).reshape(1, *black_white.shape)
+
+    bw_path = geotiff.split('.tif')[0] + 'bw.tif'
+    with rasterio.open(bw_path, 'w', **prof) as f:
+        f.write(black_white)
+    return bw_path
+    
+def _simplify(gj_object, smoothing_factor):
+    """Simplify and delete resulting null features."""
+    geoms = geojsonio.list_geometries(gj_object)
+    smoothed_and_cleaned = []
+    for g in geoms:
+        shape = shapely.geometry.asShape(g)
+        smoothed = shapely.geometry.mapping(
+            shape.simplify(smoothing_factor, preserve_topology=False))
+        if smoothed['coordinates']:
+            smoothed_and_cleaned.append(smoothed)
+    return geojsonio.format_geometries(smoothed_and_cleaned)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
