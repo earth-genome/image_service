@@ -26,7 +26,7 @@ def transfer_georef(image_file, geotiff):
         img = f.read()
 
     profile.update({k:v for k,v in ref_profile.items()
-                    if k in ['driver', 'crs', 'transform']})
+                    if k in ['driver', 'crs', 'transform', 'nodata']})
     if profile['count'] == 3:
         profile.update({'photometric':  'RGB'})
 
