@@ -18,8 +18,7 @@ from geobox import geojsonio
 from geobox import projections
 import pixel_limits
 
-ESSENTIAL_PROFILE = ['driver', 'dtype', 'width', 'height', 'crs', 'transform',
-                         'interleave']
+ESSENTIAL_PROFILE = ['driver', 'dtype', 'width', 'height', 'crs', 'transform']
 
 def extract_shapes(geotiff, raster_vals=None, source_projection=False):
     """Extract vector shapes from geotiff.
@@ -67,12 +66,13 @@ def extract_shapes(geotiff, raster_vals=None, source_projection=False):
 
     return geojson
 
-def extract_valid(geotiff, nodata=0, smoothing=.001):
+def extract_valid(geotiff, nodata=None, smoothing=.001):
     """Get a smoothed vector boundary of valid data values in a GeoTiff.
 
     Arguments:
         geotiff: Path to a GeoTiff
-        nodata: Integer value of no-data pixels
+        nodata:  An override nodata value; if None, a nodata value specified
+            in the geotiff header will be used.
         smoothing: Float passed to shapely object.simplify(). 
             Larger values result in smoother features. If zero, no smoothing
             is applied.
@@ -95,11 +95,14 @@ def extract_valid(geotiff, nodata=0, smoothing=.001):
     os.remove(black_white)
     return boundary_file
 
-def _write_black_white(geotiff, nodata):
+def _write_black_white(geotiff, nodata=None):
     """Write a new geotiff with valid as white, nodata values as black."""
     with rasterio.open(geotiff) as f:
         img = f.read()
         prof = {k:v for k,v in f.profile.items() if k in ESSENTIAL_PROFILE}
+        nodata = nodata if nodata is not None else f.profile.get('nodata')
+    if nodata is None:
+        raise ValueError('A nodata value is required.')
 
     prof.update({'count': 1})
     pmax = pixel_limits.get_max(prof['dtype'])
