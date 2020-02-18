@@ -28,13 +28,13 @@ def build_local(geotiffs, **kwargs):
     cogged = make_cog(merged, **kwargs)
     return cogged
 
-def merge(geotiffs, srcnodata=None, memorymax=4e3, tile_size=512, clean=False,
+def merge(geotiffs, nodata=None, memorymax=4e3, tile_size=512, clean=False,
           rio_merge=False, **kwargs):
     """Merge geotiffs with gdalwarp.
 
     Arguments:
         geotiffs: A list of local paths to GeoTiffs
-        srcnodata: An override nodata value for the source imagery; 
+        nodata: An override nodata value for the source imagery; 
             if None, the routine will attempt to read a common nodata value 
             from input GeoTiff headers.
         memorymax: Value to set gdalwarp -wm and --config GDAL_CACHEMAX options.
@@ -46,15 +46,15 @@ def merge(geotiffs, srcnodata=None, memorymax=4e3, tile_size=512, clean=False,
     Returns: Path to the merged GeoTiff
     """
     if rio_merge:
-        return rio_merge(geotiffs, srcnodata=srcnodata, clean=clean)
-    srcnodata = _get_srcnodata(geotiffs) if srcnodata is None else srcnodata
+        return rio_merge(geotiffs, nodata=nodata, clean=clean)
+    nodata = _get_nodata(geotiffs) if nodata is None else nodata
     outpath = _get_lcss(geotiffs) + 'merged.tif'
     commands = [
         'gdalwarp', '-overwrite',
         '--config', 'GDAL_CACHEMAX', str(memorymax), 
         '-multi', '-wo', 'NUM_THREADS=ALL_CPUS',
         '-r', 'bilinear',
-        '-srcnodata', str(srcnodata),
+        '-srcnodata', str(nodata),
         *geotiffs, outpath]
     if tile_size:
         commands += [
@@ -71,10 +71,10 @@ def merge(geotiffs, srcnodata=None, memorymax=4e3, tile_size=512, clean=False,
 # on up to ~11GB of images (max size tested to completion on a 32GB system),
 # but runs in memory and throws a MemoryError as size of output array
 # approaches system memory.
-def rio_merge(geotiffs, srcnodata=None, clean=False, **kwargs):
+def rio_merge(geotiffs, nodata=None, clean=False, **kwargs):
     outpath = _get_lcss(geotiffs) + 'merged.tif'
-    srcnodata = _get_srcnodata(geotiffs) if srcnodata is None else srcnodata
-    commands = ['rio', 'merge', '--overwrite', '--nodata', str(srcnodata),
+    nodata = _get_nodata(geotiffs) if nodata is None else nodata
+    commands = ['rio', 'merge', '--overwrite', '--nodata', str(nodata),
                     *geotiffs, outpath]
     subprocess.call(commands)
     if clean:
@@ -82,7 +82,7 @@ def rio_merge(geotiffs, srcnodata=None, clean=False, **kwargs):
             os.remove(geotiff)
     return outpath
 
-def _get_srcnodata(geotiffs):
+def _get_nodata(geotiffs):
     """Extract a common nodata value from geotiffs.
 
     Raises: ValueError if input GeoTiffs have different nodata values.
@@ -230,3 +230,28 @@ def _find_bin(bin_counts, percentiles):
     high_bin = np.where(partial_percents >= percentiles[1])[0][0]
     return low_bin, high_bin
 
+def band_separate_cog(geotiff, profile='deflate', nodata=None, **kwargs):
+    """Convert geotiff into Cloud-Optimized GeoTiffs, one per color band.
+
+    Arguments: 
+        geotiff: Path to a georeferenced Tiff
+        profile: A rio-cogeo profile
+        nodata: An override nodata value for the geotiff.
+        **kwargs: Optional kwargs to pass to subsidiary processes
+        
+    Returns: Path to the Cloud-Optimized GeoTiff.
+    """
+    with rasterio.open(geotiff) as f:
+        count = f.profile.get('count', 0)
+    bands = list(range(1, count + 1))
+
+    outpaths = []
+    for b in bands:
+        bandpath = geotiff.split('.tif')[0] + '_B0{}merged.tif'.format(b)
+        commands = ['gdal_translate', '-b' , str(b), geotiff, bandpath]
+        if nodata is not None:
+            commands += ['-a_nodata', str(nodata)]
+        subprocess.call(commands)
+        outpaths.append(make_cog(bandpath, profile=profile, **kwargs))
+    return outpaths
+    
