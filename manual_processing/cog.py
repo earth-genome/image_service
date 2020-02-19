@@ -111,8 +111,8 @@ def _get_lcss(paths):
         path_a = path_a[match.a:match.size]
     return path_a
 
-def make_cog(geotiff, profile='jpeg', fallback_profile='deflate',
-             mask=True, webmap=True, clean=False, **kwargs):
+def make_cog(geotiff, profile='jpeg', mask=True, webmap=True, clean=False,
+             **kwargs):
     """Convert geotiff into a Cloud-Optimized GeoTiff.
 
     Arguments: 
@@ -128,16 +128,8 @@ def make_cog(geotiff, profile='jpeg', fallback_profile='deflate',
     """
     if _format_is_gray16bit(geotiff):
         geotiff = expand_histogram(geotiff, clean=clean, **kwargs)
-        profile = fallback_profile
-    if profile == 'jpeg' and not _format_valid_for_jpeg(geotiff):
-        print('Rio-cogeo JPEG takes a 3-band uint8 image. No COG written.')
-        return
     
-    if 'merged' in geotiff:
-        outpath = geotiff.split('merged')[0] + '.tif'
-    else:
-        outpath = geotiff.split('.tif')[0] + '-cog.tif'
-        
+    outpath = geotiff.split('.tif')[0] + '-cog.tif'
     commands = [
         'rio', 'cogeo', 'create',
         '-p', profile,
@@ -162,15 +154,6 @@ def _format_is_gray16bit(geotiff):
     with rasterio.open(geotiff) as f:
         profile = f.profile
     return (profile['count'] == 1 and profile['dtype'] == 'uint16')
-
-def _format_valid_for_jpeg(geotiff):
-    """Check geotiff format compatibility to the rio-cogeo JPEG profile.
-
-    Returns: bool
-    """ 
-    with rasterio.open(geotiff) as f:
-        profile = f.profile
-    return (profile['count'] == 3 and profile['dtype'] == 'uint8')
 
 # Default percentiles and target_values are suggested for cloud-free images.
 # For images with clouds, try target_values=(0,235).
@@ -235,11 +218,9 @@ def band_separate_cog(geotiff, profile='deflate', nodata=None, **kwargs):
 
     Arguments: 
         geotiff: Path to a georeferenced Tiff
-        profile: A rio-cogeo profile
-        nodata: An override nodata value for the geotiff.
-        **kwargs: Optional kwargs to pass to subsidiary processes
+        **kwargs: Optional kwargs to pass to make_cog
         
-    Returns: Path to the Cloud-Optimized GeoTiff.
+    Returns: Paths to the COGs.
     """
     with rasterio.open(geotiff) as f:
         count = f.profile.get('count', 0)
@@ -247,11 +228,9 @@ def band_separate_cog(geotiff, profile='deflate', nodata=None, **kwargs):
 
     outpaths = []
     for b in bands:
-        bandpath = geotiff.split('.tif')[0] + '_B0{}merged.tif'.format(b)
+        bandpath = geotiff.split('.tif')[0] + '_B0{}.tif'.format(b)
         commands = ['gdal_translate', '-b' , str(b), geotiff, bandpath]
-        if nodata is not None:
-            commands += ['-a_nodata', str(nodata)]
         subprocess.call(commands)
-        outpaths.append(make_cog(bandpath, profile=profile, **kwargs))
+        outpaths.append(make_cog(bandpath, **kwargs))
     return outpaths
     
