@@ -29,7 +29,7 @@ def build_local(geotiffs, **kwargs):
     return cogged
 
 def merge(geotiffs, nodata=None, memorymax=4e3, tile_size=512, clean=False,
-          rio_merge=False, **kwargs):
+          **kwargs):
     """Merge geotiffs with gdalwarp.
 
     Arguments:
@@ -41,26 +41,18 @@ def merge(geotiffs, nodata=None, memorymax=4e3, tile_size=512, clean=False,
         tile_size: Blocksize for internal GeoTiff tiling; if None, 
             output GeoTiff will be striped instead
         clean: bool: To delete the input file after processing
-        rio_merge: bool: Send work to alternate rio_merge() routine.
 
     Returns: Path to the merged GeoTiff
     """
-    if rio_merge:
-        return rio_merge(geotiffs, nodata=nodata, clean=clean)
     nodata = _get_nodata(geotiffs) if nodata is None else nodata
     outpath = _get_lcss(geotiffs) + 'merged.tif'
-    commands = [
-        'gdalwarp', '-overwrite',
-        '--config', 'GDAL_CACHEMAX', str(memorymax), 
-        '-multi', '-wo', 'NUM_THREADS=ALL_CPUS',
-        '-r', 'bilinear',
-        '-srcnodata', str(nodata),
-        *geotiffs, outpath]
+    commands = (
+        f'gdalwarp -overwrite --config GDAL_CACHEMAX {memorymax} ' 
+        f'-multi -wo NUM_THREADS=ALL_CPUS -r bilinear -srcnodata {nodata} ')
     if tile_size:
-        commands += [
-            '-co', 'tiled=yes',
-            '-co', 'BLOCKXSIZE={}'.format(tile_size),
-            '-co', 'BLOCKYSIZE={}'.format(tile_size)]
+        commands += (f'-co tiled=yes '
+                     f'-co BLOCKXSIZE={tile_size} -co BLOCKYSIZE={tile_size}')
+    commands = commands.split() + [*geotiffs, outpath]
     subprocess.call(commands)
     if clean:
         for geotiff in geotiffs:
@@ -72,10 +64,11 @@ def merge(geotiffs, nodata=None, memorymax=4e3, tile_size=512, clean=False,
 # but runs in memory and throws a MemoryError as size of output array
 # approaches system memory.
 def rio_merge(geotiffs, nodata=None, clean=False, **kwargs):
+    """Merge geotiffs with rio merge."""
     outpath = _get_lcss(geotiffs) + 'merged.tif'
     nodata = _get_nodata(geotiffs) if nodata is None else nodata
-    commands = ['rio', 'merge', '--overwrite', '--nodata', str(nodata),
-                    *geotiffs, outpath]
+    commands = f'rio merge --overwrite --nodata {nodata}'
+    commands = commands.split() + [*geotiffs, outpath]
     subprocess.call(commands)
     if clean:
         for geotiff in geotiffs:
@@ -119,8 +112,8 @@ def separate_bands(geotiff):
 
     outpaths = []
     for b in bands:
-        bandpath = geotiff.split('.tif')[0] + '_B0{}.tif'.format(b)
-        commands = ['gdal_translate', '-b' , str(b), geotiff, bandpath]
+        bandpath = geotiff.split('.tif')[0] + f'_B0{b}.tif'
+        commands = f'gdal_translate -b {b} {geotiff} {bandpath}'.split()
         subprocess.call(commands)
         outpaths.append(bandpath)
     return outpaths
@@ -144,11 +137,8 @@ def make_cog(geotiff, profile='jpeg', mask=True, webmap=True, clean=False,
         geotiff = expand_histogram(geotiff, clean=clean, **kwargs)
     
     outpath = geotiff.split('.tif')[0] + '-cog.tif'
-    commands = [
-        'rio', 'cogeo', 'create',
-        '-p', profile,
-        '-r', 'bilinear', '--overview-resampling', 'bilinear',
-        geotiff, outpath]
+    commands = (f'rio cogeo create -p {profile} -r bilinear '
+                f'--overview-resampling bilinear {geotiff} {outpath}').split()
     if mask:
         commands += ['--add-mask']
     if webmap:
@@ -186,10 +176,9 @@ def expand_histogram(geotiff, percentiles=(0,97), target_values=(0,144),
     """
     cuts = _get_histogram_cuts(geotiff, percentiles)
     outpath = geotiff.split('.tif')[0] + '-uint8.tif'
-    commands = [
-        'gdal_translate', '-ot', 'Byte', 
-        '-scale', *[str(c) for c in cuts], *[str(v) for v in target_values],
-        geotiff, outpath]
+    commands = f'gdal_translate -ot Byte {geotiff} {outpath}'.split()
+    commands += ['-scale',
+                 *[str(c) for c in cuts], *[str(v) for v in target_values]]
     subprocess.call(commands)
 
     if clean:
@@ -209,7 +198,7 @@ def _get_histogram_cuts(geotiff, percentiles):
 
 def _extract_histogram(geotiff):
     """Get geotiff histogram via gdalinfo."""
-    commands = ['gdalinfo', geotiff, '-hist', '-json']
+    commands = f'gdalinfo {geotiff} -hist -json'.split()
     stats = json.loads(subprocess.run(commands, stdout=subprocess.PIPE).stdout)
     band = next(iter(stats['bands']))
     
