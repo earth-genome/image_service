@@ -1,6 +1,6 @@
 """Process a collection of GeoTiffs into a Cloud-Optimized GeoTiff (COG).
 
-External functions: build_local, merge, make_cog
+External functions: build_local, merge, separate_bands, make_cog
 
 Base usgae, given a list of paths to geotiffs:
 >>> build_local(geotiffs, **kwargs)
@@ -111,6 +111,20 @@ def _get_lcss(paths):
         path_a = path_a[match.a:match.size]
     return path_a
 
+def separate_bands(geotiff):
+    """Break geotiff into its individual color bands."""
+    with rasterio.open(geotiff) as f:
+        count = f.profile.get('count', 0)
+    bands = list(range(1, count + 1))
+
+    outpaths = []
+    for b in bands:
+        bandpath = geotiff.split('.tif')[0] + '_B0{}.tif'.format(b)
+        commands = ['gdal_translate', '-b' , str(b), geotiff, bandpath]
+        subprocess.call(commands)
+        outpaths.append(bandpath)
+    return outpaths
+
 def make_cog(geotiff, profile='jpeg', mask=True, webmap=True, clean=False,
              **kwargs):
     """Convert geotiff into a Cloud-Optimized GeoTiff.
@@ -212,25 +226,3 @@ def _find_bin(bin_counts, percentiles):
     low_bin = np.where(partial_percents >= percentiles[0])[0][0]
     high_bin = np.where(partial_percents >= percentiles[1])[0][0]
     return low_bin, high_bin
-
-def band_separate_cog(geotiff, profile='deflate', nodata=None, **kwargs):
-    """Convert geotiff into Cloud-Optimized GeoTiffs, one per color band.
-
-    Arguments: 
-        geotiff: Path to a georeferenced Tiff
-        **kwargs: Optional kwargs to pass to make_cog
-        
-    Returns: Paths to the COGs.
-    """
-    with rasterio.open(geotiff) as f:
-        count = f.profile.get('count', 0)
-    bands = list(range(1, count + 1))
-
-    outpaths = []
-    for b in bands:
-        bandpath = geotiff.split('.tif')[0] + '_B0{}.tif'.format(b)
-        commands = ['gdal_translate', '-b' , str(b), geotiff, bandpath]
-        subprocess.call(commands)
-        outpaths.append(make_cog(bandpath, **kwargs))
-    return outpaths
-    
