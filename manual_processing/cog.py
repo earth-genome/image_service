@@ -48,7 +48,9 @@ def merge(geotiffs, nodata=None, memorymax=4e3, tile_size=512, clean=False,
     outpath = _get_lcss(geotiffs) + 'merged.tif'
     commands = (
         f'gdalwarp -overwrite --config GDAL_CACHEMAX {memorymax} ' 
-        f'-multi -wo NUM_THREADS=ALL_CPUS -r bilinear -srcnodata {nodata} ')
+        f'-multi -wo NUM_THREADS=ALL_CPUS -r bilinear ')
+    if nodata is not None:
+        commands += f'-srcnodata {nodata} '
     if tile_size:
         commands += (f'-co tiled=yes '
                      f'-co BLOCKXSIZE={tile_size} -co BLOCKYSIZE={tile_size}')
