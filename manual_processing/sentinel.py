@@ -94,6 +94,7 @@ def download_and_Sen2Cor(date, zones, aws_idx=0, redownload=False, clean=False,
                 req.save_data()
             except sentinelhub.DownloadFailedException as e:
                 print(repr(e))
+                continue
 
         subprocess.call(['L2A_Process', safepath])
         outpaths.append(_extract_10mTCI(date, zone, dest_dir, zone_dir))
@@ -105,7 +106,8 @@ def _extract_10mTCI(date, zone, dest_dir, zone_dir):
     """Extract the 10m TCI JPEG2000 from the Level-2A SAFE directory.
 
     Returns: New path to the jp2 file.
-    """ 
+    """
+    outpath = ''
     for dirpath, _, files in os.walk(zone_dir):
         for f in files: 
             if 'TCI_10m.jp2' in f:
