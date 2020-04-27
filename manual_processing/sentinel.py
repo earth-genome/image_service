@@ -19,41 +19,52 @@ import _env
 import cog
 from georeferencing import mask
 
-AWS_GRAB = 'aws s3 cp s3://sentinel-s2-{level}/tiles/{utm_zone}/{lat_band}/{grid_square}/{year}/{month}/{day}/{aws_idx}/R10m/TCI.jp2 {outpath} --request-payer'
+AWS_L2A_GRAB = 'aws s3 cp s3://sentinel-s2-{level}/tiles/{utm_zone}/{lat_band}/{grid_square}/{year}/{month}/{day}/{aws_idx}/R{resolution}m/{band}.jp2 {outpath} --request-payer'
+
+AWS_L1C_GRAB = ''.join(AWS_L2A_GRAB.split('R{resolution}m/'))
 
 DEST_DIR = os.path.join(_env.base_dir, 'tmp')
 if not os.path.exists(DEST_DIR):
     os.mkdir(DEST_DIR)
 
-def download(level, date, zones, aws_idx=0, redownload=False,
-             dest_dir=DEST_DIR):
+def download(date, zones, level='l2a', aws_idx=0, resolution=10, band='TCI',
+             redownload=False, dest_dir=DEST_DIR):
     """Download Sentinel-2 TCI imagery.
 
     Arguments: 
-        level: Sentinel processing level, 'l1c' or 'l2a'
         date: sensing date in isoformat, 'YYYY-MM-DD'
         zones: list of UTM grid zones of form '19NLJ'
-        aws_idx: The last number in the s3 file path for the relevant tile(s).
+        level: Sentinel processing level, 'l1c' or 'l2a'
+        aws_idx: The last number in the s3 file path for the relevant tile(s)
+            (a version number). 
+        resolution: 10, 20, or 60 (meters/pixel). Only affects l2a
+            product. (l1c comes native-resolution only.)
+        band: TCI (for RGB), B01, B02, ... B12, or B8A. For the l2a product,
+            some bands are available only at lower resolutions.
         redownload: bool: Force redownload of image even if path exists.
         dest_dir: Path to directory to write images.
 
     Returns: List of paths to downloaded images.
     """
     outpaths = []
-    payload = {'level': level.lower(), 'aws_idx': aws_idx}
+    payload = {'level': level.lower(), 'aws_idx': aws_idx,
+                   'resolution': resolution, 'band': band.upper()}
     payload.update({k:v.lstrip('0') for k,v in
                         zip(['year', 'month', 'day'], date.split('-'))})
     for zone in zones:
-        outpath = os.path.join(dest_dir, 'Sentinel_{}TCI{}_{}.jp2'.format(
-            level, date, zone))
+        outpath = os.path.join(
+            dest_dir, f'Sentinel_{level}{date}_{zone}_{band}.jp2')
         payload.update({
             'utm_zone': zone[:2],
             'lat_band': zone[2:3],
             'grid_square': zone[3:],
         })
         if not os.path.exists(outpath) or redownload:
-            commands = AWS_GRAB.format(outpath=outpath, **payload).split()
-            subprocess.call(commands)
+            if payload['level'] == 'l2a':
+                grab = AWS_L2A_GRAB.format(outpath=outpath, **payload)
+            elif payload['level'] == 'l1c':
+                grab = AWS_L1C_GRAB.format(outpath=outpath, **payload)
+            subprocess.call(grab.split())
         outpaths.append(outpath)
     return outpaths
 
