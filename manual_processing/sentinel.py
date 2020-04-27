@@ -68,8 +68,8 @@ def download(date, zones, level='l2a', aws_idx=0, resolution=10, band='TCI',
         outpaths.append(outpath)
     return outpaths
 
-def download_and_Sen2Cor(date, zones, aws_idx=0, redownload=False, clean=False,
-                         dest_dir=DEST_DIR):
+def download_and_Sen2Cor(date, zones, aws_idx=0, redownload=False,
+                         TCI_only=False, dest_dir=DEST_DIR):
     """Download Sentinel-2 Level-1C imagery and process to Level-2A.
 
     Arguments: 
@@ -79,10 +79,11 @@ def download_and_Sen2Cor(date, zones, aws_idx=0, redownload=False, clean=False,
             file path. Typically it should be 0, but in at least one instance 
             Sen2Cor failed on version 0 but succeeded on version 1. 
         redownload: bool: Force redownload of image even if path exists.
-        clean: bool: To delete input and intermediate files after processing
+        TCI_only: bool: If True, extract the 10m TCI (RGB) image and 
+            delete all other processed files.
         dest_dir: Path to directory to write images.
 
-    Returns: List of paths to downloaded images.
+    Returns: List of paths to downloaded images or image directories.
     """
     outpaths = []
     for zone in zones:
@@ -108,9 +109,11 @@ def download_and_Sen2Cor(date, zones, aws_idx=0, redownload=False, clean=False,
                 continue
 
         subprocess.call(['L2A_Process', safepath])
-        outpaths.append(_extract_10mTCI(date, zone, dest_dir, zone_dir))
-        if clean:
+        if TCI_only:
+            outpaths.append(_extract_10mTCI(date, zone, dest_dir, zone_dir))
             shutil.rmtree(zone_dir)
+        else:
+            outpaths.append(zone_dir)
     return outpaths
 
 def _extract_10mTCI(date, zone, dest_dir, zone_dir):
