@@ -8,10 +8,9 @@ LC08_L1TP_037034_20170309_20180125_01_T1_sr_band2.tif
 For Landsat8, R-G-B images are built from bands 4-3-2. For Landsat5, R-G-B 
 are built from bands 3-2-1.  
 
-Usage: Untar everything into a folder. Multiple scenes are fine, as the 
-program will untangle them. The only restrictions are that all band files
-for a scene must share a common prefix, with filename of form prefixband?.tif,
-and be Int16 or Uint16 in type.
+Usage: Untar everything into a folder. Multiple scenes are fine, as
+the program will untangle them. All band files for a scene must share
+a common prefix, with filename of form prefixband?.tif or .TIF.
 
 Then: 
 
@@ -25,10 +24,10 @@ cropped to the footprint, if given. The image_dir defaults to pwd if not
 specified. 
 
 The -wp flag sets the white point of the output images. The Landsat
-histograms are confined to a small part of the possible 16-bit
-range. In light testing, 3500 (max 2**16 - 1 = 65535) seems reasonable
-default white point for a linear rescaling of the histogram. Adjust
-this if the output image is overly dark or overly saturated.
+histograms are confined to a small part of the possible 16-bit (or in
+older Level-1 images, 8-bit) range. Values in the range 2000-4000
+often work for 16-bit data. Adjust this if the output image is overly
+dark or overly saturated.
 
 The routine outputs one geotiff for each processed scene.
 
@@ -45,10 +44,9 @@ import _env
 from geobox import geobox
 from geobox import geojsonio
 
-WHITE_PT = 3500
-BIT_DEPTH = 16
+DEFAULT_BIT_DEPTH = 16
 
-def build_rgb(prefix, files, bounds, **kwargs):
+def build_rgb(prefix, paths, bounds, **kwargs):
     """Build an RGB image from individual color bands.
 
     Arguments: 
@@ -63,19 +61,19 @@ def build_rgb(prefix, files, bounds, **kwargs):
 
     Returns: Geotiff filename
     """
-    vrtfile = combine_bands(prefix, files)
+    vrtfile = combine_bands(prefix, paths)
     outfile = crop_and_rescale(vrtfile, bounds, **kwargs)
     os.remove(vrtfile)
     return outfile
 
-def combine_bands(prefix, files):
+def combine_bands(prefix, paths):
     """Assemble R-G-B image bands into GDAL .vrt file."""
     combined = prefix + '.vrt'
-    commands = ['gdalbuildvrt', '-separate', combined, *files]
+    commands = ['gdalbuildvrt', '-separate', combined, *paths]
     subprocess.call(commands)
     return combined
 
-def crop_and_rescale(vrtfile, bounds, **kwargs):
+def crop_and_rescale(vrtfile, bounds, bit_depth=16, **kwargs):
     """Crop virtual image to bounds and linearly rescale the histogram.
 
     Outputs a geotiff; returns the filename.
@@ -89,52 +87,38 @@ def crop_and_rescale(vrtfile, bounds, **kwargs):
     if bounds:
         gdal_bounds = [str(bounds[n]) for n in (0, 3, 2, 1)]
         commands += ['-projwin_srs', 'EPSG:4326', '-projwin', *gdal_bounds]
-    if kwargs['bit_depth'] == 8:
-        commands += [
-            '-ot', 'Byte',
-            '-scale', '0', str(kwargs['white_point']), '0', '255'
-        ]
-    elif kwargs['bit_depth'] == 16:
-        commands += [
-            '-ot', 'UInt16',
-            '-scale', '0', str(kwargs['white_point']), '0', '65535'
-        ]
-    else:
-        raise ValueError('Invalid output bit depth: {}.'.format(
-            kwargs['bit_depth']))
+    wp = kwargs.get('white_point')
+    if bit_depth == 8:
+        commands += ['-ot', 'Byte']
+        if wp:
+            commands += ['-scale', '0', str(wp), '0', '255']
+    elif bit_depth == 16:
+        commands += ['-ot', 'UInt16']
+        if wp:
+            commands += ['-scale', '0', str(wp), '0', '65535']
+        else:
+            raise ValueError(f'Invalid output bit depth: {bit_depth}.')
     subprocess.call(commands)
     return tiffile
 
-# Image file handling
+def partition(paths, bands):
+    """Partition input paths by common prefixes and filter by bands.
 
-def partition(filenames, bandlist):
-    """Partition input filenames by common prefixes and filter by bandlist.
-
-    Returns: dict of prefixes and filenames
+    Returns: dict of prefixes and paths
     """
-    prefixes = set([f.split('band')[0] for f in filenames])
-    partition = {p:[f for f in filenames if p in f] for p in prefixes}
-    filtered = {p:filter_bands(p, files, bandlist) for p,files 
-                    in partition.items()}
-    return filtered
-
-def filter_bands(prefix, files, bandlist):
-    """Select from list of files those bands numbered in bandlist.
-
-    Returns: List of filenames
-    """
-    bandfiles = [prefix + 'band{}.tif'.format(b) for b in bandlist]
-    for f in bandfiles:
-        if f not in files:
-            raise FileNotFoundError('Missing color bands for {}'.format(prefix))
-    return bandfiles
-
+    prefixes = set([p.split('band')[0] for p in paths])
+    partition = {}
+    for prefix in prefixes:
+        partition.update({
+            prefix: [p for b in bands for p in paths if prefix in p and
+                         f'band{b}.' in p]})
+    return partition
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='Process Landsat surface reflectance tiles. Routine ' +
             'will attempt to process all files in pwd with filenames ' +
-            'of form *band?.tif.'
+            'of form *band?.tif or .TIF.'
     )
     parser.add_argument(
         'bandlist',
@@ -151,9 +135,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '-wp', '--white_point',
         type=int,
-        default=WHITE_PT,
-        help='16-bit image value to be reset to white. Default: {}'.format(
-            WHITE_PT)
+        help='Image integer bit value to be reset to white.'
     )
     parser.add_argument(
         '-d', '--image_dir',
@@ -164,22 +146,23 @@ if __name__ == '__main__':
     parser.add_argument(
         '-b', '--bit_depth',
         type=int,
-        default=BIT_DEPTH,
-        help='Bit-depth of output image, either 8 or 16. Default: {}'.format(
-            BIT_DEPTH)
+        default=16,
+        help=('Bit-depth of output image, either 8 or 16. Default: 16. ' 
+              'User is responsible for adjusting white point on change '
+              'of bit depth.')
     )
     args = parser.parse_args()
 
     geoms = geojsonio.load_geometries(args.geojson) if args.geojson else []
     bounds = geobox.bbox_from_geometries(geoms).bounds if geoms else []
-
-    image_files = glob.glob(os.path.join(args.image_dir, '*band?.tif'))
-    grouped = partition(image_files, args.bandlist)
-    for prefix, files in grouped.items():
-        try:
-            build_rgb(prefix, files, bounds, **vars(args))
-        except FileNotFoundError as e:
-            print('{}\nContinuing...'.format(repr(e)))
+    
+    base = os.path.join(args.image_dir, '*band?')
+    paths = [glob.glob(base + ext) for ext in ['.tif', '.TIF']]
+    paths = [p for sublist in paths for p in sublist]
+        
+    grouped = partition(paths, args.bandlist)
+    for prefix, grouped_paths in grouped.items():
+        build_rgb(prefix, grouped_paths, bounds, **vars(args))
 
 
     
