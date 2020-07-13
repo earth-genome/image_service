@@ -13,9 +13,8 @@ corresponding bands are numbered 4 3 2 1. (Blue band is never used and
 can be omitted.)
 
 Usage: Untar everything into a folder. Multiple scenes are fine, as
-the program will untangle them. The only restrictions are that all
-band files for a scene must share a common prefix, with filename of
-form prefixband?.tif, and be Int16 in type.
+the program will untangle them. All band files for a scene must share
+a common prefix, with filename of form prefixband?.tif or .TIF.
 
 $ python reduce_landsat_to_indices.py 5 4 3 2 -i ndvi -g footprint.geojson -d image_dir
 
@@ -45,12 +44,12 @@ from geobox import geojsonio
 
 INDICES = ['ndvi', 'ndwi']
 
-def build_index(prefix, files, bounds, index):
+def build_index(prefix, paths, bounds, index):
     """Build a landcover index from NIR, color bands.
 
     Arguments: 
         prefix: common filename prefix for image bands
-        files: list of NIR, R, G, B geotiffs
+        paths: list of NIR, R, G, B geotiffs
         bounds: lat/lon coordinates, ordered [minx, miny, maxx, maxy], or []
         index: one of the known INDICES
 
@@ -58,14 +57,14 @@ def build_index(prefix, files, bounds, index):
 
     Returns: Geotiff filename
     """
-    nirpath = crop(prefix + 'nir', files[0], bounds) 
+    nirpath = crop(prefix + 'nir', paths[0], bounds) 
     if index == 'ndvi':
-        colorpath = crop(prefix + 'color', files[1], bounds)
+        colorpath = crop(prefix + 'color', paths[1], bounds)
     elif index == 'ndwi':
-        colorpath = crop(prefix + 'color', files[2], bounds)
+        colorpath = crop(prefix + 'color', paths[2], bounds)
     else:
         raise ValueError('Landcover index not recognized.')
-    
+
     outfile = calculate_index(nirpath, colorpath, index)
     for f in (nirpath, colorpath):
         os.remove(f)
@@ -109,7 +108,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='Process Landsat surface reflectance tiles. Routine ' +
             'will attempt to process all files in pwd with filenames ' +
-            'of form *band?.tif.'
+            'of form *band?.tif or .TIF.'
     )
     parser.add_argument(
         'bandlist',
@@ -141,14 +140,15 @@ if __name__ == '__main__':
 
     geoms = geojsonio.load_geometries(args.geojson) if args.geojson else []
     bounds = geobox.bbox_from_geometries(geoms).bounds if geoms else []
-    image_files = glob.glob(os.path.join(args.image_dir, '*band?.tif'))
-    grouped = reduce_landsat.partition(image_files, args.bandlist)
-    for prefix, files in grouped.items():
+
+    base = os.path.join(args.image_dir, '*band?')
+    paths = [glob.glob(base + ext) for ext in ['.tif', '.TIF']]
+    paths = [p for sublist in paths for p in sublist]
+    
+    grouped = reduce_landsat.partition(paths, args.bandlist)
+    for prefix, grouped_paths in grouped.items():
         for index in args.indices:
-            try:
-                build_index(prefix, files, bounds, index)
-            except FileNotFoundError as e:
-                print('{}\nContinuing...'.format(repr(e)))
+            build_index(prefix, grouped_paths, bounds, index)
 
 
     
