@@ -120,7 +120,7 @@ def separate_bands(geotiff):
         outpaths.append(bandpath)
     return outpaths
 
-def make_cog(geotiff, profile='jpeg', mask=True, webmap=True, blocksize=512,
+def make_cog(geotiff, profile='jpeg', mask=True, webmap=True, tile_size=512,
              clean=False, **kwargs):
     """Convert geotiff into a Cloud-Optimized GeoTiff.
 
@@ -130,7 +130,7 @@ def make_cog(geotiff, profile='jpeg', mask=True, webmap=True, blocksize=512,
         mask: bool: To handle nodata values via a mask
         webmap: bool: The rio-cogeo web-optimized flag: Reprojects to 
             EPSG:3857 and aligns overviews to standard webmap tiles
-        blocksize: Integer tile size (typically 256 or 512)
+        tile_size: Integer tile size (typically 256 or 512)
         clean: bool: To delete the input file after processing
         **kwargs: Optional kwargs to pass to expand_histogram
         
@@ -141,7 +141,7 @@ def make_cog(geotiff, profile='jpeg', mask=True, webmap=True, blocksize=512,
     
     outpath = geotiff.split('.tif')[0] + '-cog.tif'
     commands = (f'rio cogeo create -p {profile} -r bilinear '
-                f'--co BLOCKXSIZE={blocksize} --co BLOCKYSIZE={blocksize} '
+                f'--co BLOCKXSIZE={tile_size} --co BLOCKYSIZE={tile_size} '
                 f'--overview-resampling bilinear {geotiff} {outpath}').split()
     if mask:
         commands += ['--add-mask']
