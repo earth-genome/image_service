@@ -114,7 +114,7 @@ def separate_bands(geotiff):
         outpaths.append(bandpath)
     return outpaths
 
-def make_cog(geotiff, profile='jpeg', mask=True, webmap=True, tile_size=512,
+def make_cog(geotiff, profile='default', mask=False, webmap=True, tile_size=256,
              clean=False, **kwargs):
     """Convert geotiff into a Cloud-Optimized GeoTiff.
 
