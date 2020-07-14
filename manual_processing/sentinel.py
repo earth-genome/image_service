@@ -131,13 +131,11 @@ def _extract_10mTCI(date, zone, dest_dir, zone_dir):
                 os.rename(os.path.join(dirpath, f), outpath)
     return outpath
                 
-def jp2_to_geotiff(jp2, tile_size=None, overwrite=False, clean=False):
-    """Convert a JPEG2000 into a tiled GeoTiff.
+def jp2_to_geotiff(jp2, overwrite=False, clean=False):
+    """Convert a JPEG2000 into a striped GeoTiff.
 
     Arguments: 
         jp2: Path to a jp2 file
-        tile_size: Tile size (e.g. 256 or 512) if geotiff is to be tiled;
-            if None, a striped geotiff will be written instead
         overwrite: bool: To replace an existing .tif file with the same 
             prefix as the jp2.
         clean: bool: To delete input and intermediate files after processing
@@ -145,12 +143,7 @@ def jp2_to_geotiff(jp2, tile_size=None, overwrite=False, clean=False):
     Returns: Path to the geotiff
     """
     geotiff = jp2.split('.jp2')[0] + '.tif'
-    if tile_size:
-        commands = ('rio convert --co tiled=yes '
-                    '--co BLOCKXSIZE={} --co BLOCKYSIZE={} '
-                    '{} {}'.format(tile_size, tile_size, jp2, geotiff)).split()
-    else:
-        commands = 'rio convert {} {}'.format(jp2, geotiff).split()
+    commands = 'rio convert {} {}'.format(jp2, geotiff).split()
     if os.path.exists(geotiff):
         if overwrite:
             os.remove(geotiff)
@@ -161,27 +154,23 @@ def jp2_to_geotiff(jp2, tile_size=None, overwrite=False, clean=False):
         os.remove(jp2)
     return geotiff
 
-def mask_merge_cog(jp2s, tile_size=512, srcnodata=0, geojson_mask=None,
-                   clean=False, **kwargs):
+def mask_merge_cog(jp2s, nodata=0, geojson_mask=None, clean=False, **kwargs):
     """Mask, merge, and cog a list of Sentinel jp2s.
 
     Arguments:
         jp2s: List of paths to jp2 files
-        tile_size: Intermediate geotiff tile_size
-        srcnodata: An override nodata value for the source imagery
+        nodata: An override nodata value for the source imagery
         geojson_mask: Path to a GeoJSON to apply as mask 
         clean: bool: To delete input and intermediate files after processing
         Optional **kwargs to pass to cog.build_local
 
     Returns: Path to a COG
     """
-    geotiffs = [jp2_to_geotiff(jp2, tile_size=tile_size, clean=clean)
-                    for jp2 in jp2s]
+    geotiffs = [jp2_to_geotiff(jp2, clean=clean) for jp2 in jp2s]
     if geojson_mask:
-        masked = [mask.mask(g, geojson_mask, clean=clean, nodata=srcnodata)
+        masked = [mask.mask(g, geojson_mask, clean=clean, nodata=nodata)
                       for g in geotiffs]
     else:
         masked = geotiffs
-    cogged = cog.build_local(masked, srcnodata=srcnodata, clean=clean,
-                             tile_size=tile_size, **kwargs)
+    cogged = cog.build_local(masked, nodata=nodata, clean=clean, **kwargs)
     return cogged

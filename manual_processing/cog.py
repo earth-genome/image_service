@@ -28,8 +28,7 @@ def build_local(geotiffs, **kwargs):
     cogged = make_cog(merged, **kwargs)
     return cogged
 
-def merge(geotiffs, nodata=None, memorymax=4e3, tile_size=512, clean=False,
-          **kwargs):
+def merge(geotiffs, nodata=None, memorymax=4e3, clean=False, **kwargs):
     """Merge geotiffs with gdalwarp.
 
     Arguments:
@@ -38,8 +37,6 @@ def merge(geotiffs, nodata=None, memorymax=4e3, tile_size=512, clean=False,
             if None, the routine will attempt to read a common nodata value 
             from input GeoTiff headers.
         memorymax: Value to set gdalwarp -wm and --config GDAL_CACHEMAX options.
-        tile_size: Blocksize for internal GeoTiff tiling; if None, 
-            output GeoTiff will be striped instead
         clean: bool: To delete the input file after processing
 
     Returns: Path to the merged GeoTiff
@@ -51,9 +48,6 @@ def merge(geotiffs, nodata=None, memorymax=4e3, tile_size=512, clean=False,
         f'-multi -wo NUM_THREADS=ALL_CPUS -r bilinear ')
     if nodata is not None:
         commands += f'-srcnodata {nodata} '
-    if tile_size:
-        commands += (f'-co tiled=yes '
-                     f'-co BLOCKXSIZE={tile_size} -co BLOCKYSIZE={tile_size}')
     commands = commands.split() + [*geotiffs, outpath]
     subprocess.call(commands)
     if clean:
