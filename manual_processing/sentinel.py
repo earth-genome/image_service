@@ -154,7 +154,7 @@ def jp2_to_geotiff(jp2, overwrite=False, clean=False):
         os.remove(jp2)
     return geotiff
 
-def mask_merge_cog(jp2s, nodata=0, geojson_mask=None, clean=False, **kwargs):
+def mask_merge_cog(jp2s, nodata=None, geojson_mask=None, clean=False, **kwargs):
     """Mask, merge, and cog a list of Sentinel jp2s.
 
     Arguments:
