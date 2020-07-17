@@ -23,17 +23,17 @@ import _env
 from geobox import geojsonio
 from geobox import projections
 
-def mask(geotiff, geojson, clean=False, **kwargs):
+def mask(geotiff, geojson, clean=False, filled=False, **kwargs):
     """Mask geotiff with geojson features.
 
     Arguments:
         geotiff: A GeoTiff
         geojson: Path to a GeoJSON Feature or Feature Collection
         clean: bool: To delete input file after processing
-        **kwargs: options passed directly to rasterio.mask.mask(), e.g.:
+        filled: bool: To fill masked areas with nodata value, or if not,
+            to return a masked image.
+        **kwargs: Further options to pass to rasterio.mask.mask(), e.g.:
             nodata: Override nodata value. Defaults to value for geotiff, or 0.
-            filled: bool: To fill masked areas with nodata value, or if not,
-                to return a masked array; default True.
             invert: bool: To mask the areas _inside_ the vector shapes.
     
     Returns: Path to the masked geotiff.
@@ -43,13 +43,13 @@ def mask(geotiff, geojson, clean=False, **kwargs):
         epsg_code = profile['crs']['init'].split('epsg:')[-1]
         geoms = geojsonio.load_geometries(geojson)
         geoms = [projections.project_geojson_geom(g, epsg_code) for g in geoms]
-        masked, _ = rasterio.mask.mask(dataset, geoms, **kwargs)
+        masked, _ = rasterio.mask.mask(dataset, geoms, filled=filled, **kwargs)
 
     outpath = geotiff.split('.tif')[0] + '-masked.tif'
     with rasterio.open(outpath, 'w', **profile) as of:
         of.write(masked)
-        if not kwargs.get('filled', True):
-            gdalmask = (~masked.mask*255).astype('uint8')
+        if not filled:
+            gdalmask = (~masked.mask)[0]
             of.write_mask(gdalmask)
     if clean:
         os.remove(geotiff)
