@@ -40,6 +40,9 @@ import os
 import subprocess
 import sys
 
+import numpy as np
+import rasterio
+
 import _env
 from geobox import geobox
 from geobox import geojsonio
@@ -63,6 +66,8 @@ def build_rgb(prefix, paths, bounds, **kwargs):
     """
     vrtfile = combine_bands(prefix, paths)
     outfile = crop_and_rescale(vrtfile, bounds, **kwargs)
+    if kwargs.get('mask'):
+        write_mask(outfile, next(iter(paths)))
     os.remove(vrtfile)
     return outfile
 
@@ -73,7 +78,7 @@ def combine_bands(prefix, paths):
     subprocess.call(commands)
     return combined
 
-def crop_and_rescale(vrtfile, bounds, bit_depth=16, **kwargs):
+def crop_and_rescale(vrtfile, bounds, **kwargs):
     """Crop virtual image to bounds and linearly rescale the histogram.
 
     Outputs a geotiff; returns the filename.
@@ -88,6 +93,8 @@ def crop_and_rescale(vrtfile, bounds, bit_depth=16, **kwargs):
         gdal_bounds = [str(bounds[n]) for n in (0, 3, 2, 1)]
         commands += ['-projwin_srs', 'EPSG:4326', '-projwin', *gdal_bounds]
     wp = kwargs.get('white_point')
+    
+    bit_depth = kwargs.get('bit_depth')
     if bit_depth == 8:
         commands += ['-ot', 'Byte']
         if wp:
@@ -100,6 +107,16 @@ def crop_and_rescale(vrtfile, bounds, bit_depth=16, **kwargs):
             raise ValueError(f'Invalid output bit depth: {bit_depth}.')
     subprocess.call(commands)
     return tiffile
+
+def write_mask(outfile, raw_tile, nodata=-9999):
+    """Write a no-data mask to outfile based on nodata values in raw_tile."""
+    with rasterio.open(raw_tile) as f:
+        raw = f.read()[0]
+    im = rasterio.open(outfile, 'r+')
+    msk = np.ones(im.shape, dtype='bool')
+    msk[raw == nodata] = False
+    im.write_mask(msk)
+    im.close()
 
 def partition(paths, bands):
     """Partition input paths by common prefixes and filter by bands.
@@ -150,6 +167,11 @@ if __name__ == '__main__':
         help=('Bit-depth of output image, either 8 or 16. Default: 16. ' 
               'User is responsible for adjusting white point on change '
               'of bit depth.')
+    )
+    parser.add_argument(
+        '-m', '--mask',
+        action='store_true',
+        help='Flag: If set, a sidecar no-data mask will be created.'
     )
     args = parser.parse_args()
 
