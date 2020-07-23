@@ -17,7 +17,7 @@ import sentinelhub
 
 import _env
 import cog
-from georeferencing import mask
+import mask
 
 AWS_L2A_GRAB = 'aws s3 cp s3://sentinel-s2-{level}/tiles/{utm_zone}/{lat_band}/{grid_square}/{year}/{month}/{day}/{aws_idx}/R{resolution}m/{band}.jp2 {outpath} --request-payer'
 
