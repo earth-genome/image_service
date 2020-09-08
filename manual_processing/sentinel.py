@@ -162,13 +162,14 @@ def mask_merge_cog(jp2s, nodata=None, geojson_mask=None, clean=False, **kwargs):
         nodata: An override nodata value for the source imagery
         geojson_mask: Path to a GeoJSON to apply as mask 
         clean: bool: To delete input and intermediate files after processing
-        Optional **kwargs to pass to cog.build_local
+        Optional **kwargs to pass to mask.mask and cog.build_local
 
     Returns: Path to a COG
     """
     geotiffs = [jp2_to_geotiff(jp2, clean=clean) for jp2 in jp2s]
     if geojson_mask:
-        masked = [mask.mask(g, geojson_mask, clean=clean, nodata=nodata)
+        masked = [mask.mask(g, geojson_mask, nodata=nodata, clean=clean,
+                            **kwargs)
                       for g in geotiffs]
     else:
         masked = geotiffs
