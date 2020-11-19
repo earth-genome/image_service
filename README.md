@@ -13,7 +13,6 @@ There are also several tools available for local image processing:
 ### Dependencies 
 
 * API keys in out-of-repo files .env and webapp/.google_config.json.
-* Our utilities repo as a submodule in webapp/grabbers. 
 
 ### Developing and deploying
 
