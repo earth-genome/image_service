@@ -12,6 +12,7 @@ There are also several tools available for local image processing:
 
 ### Dependencies 
 
+* GDAL
 * API keys in out-of-repo files .env and webapp/.google_config.json.
 
 ### Developing and deploying
