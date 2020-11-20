@@ -7,7 +7,7 @@ at the primary Heroku [entry point](http://earthrise-imagery.herokuapp.com).
 
 There are also several tools available for local image processing: 
 * Manual_reprocessing: Mosaicking and color correction for image tiles downloaded elsewhere.
-* Georeferencing: Conversions between vectors and rasters and a tool to restore georeferencing to Photoshopped images.
+* Georeferencing: Conversions between vectors and rasters and a tool to restore georeferencing to images.
 * The modules in webapp/grabbers: Local access to the satellite provider APIs (redundant with the web service). 
 
 ### Dependencies 
