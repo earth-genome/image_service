@@ -1,6 +1,6 @@
 aiohttp==3.4.4
 python-dateutil==2.7.5
-numpy==1.15.3
+numpy==1.22.0
 scipy==1.1.0
 rasterio==1.1.2
 rio-color==1.0.0
