@@ -89,6 +89,7 @@ def calculate_index(nirpath, colorpath, index):
 
     with rasterio.open(colorpath) as f:
         color = f.read().astype('float32')
+        mask = f.read_masks(1)
         profile = f.profile.copy()
 
     if index == 'ndvi':
@@ -98,10 +99,11 @@ def calculate_index(nirpath, colorpath, index):
     else:
         raise ValueError('Landcover index not recognized.')
 
-    profile.update({'count': 1, 'dtype': rasterio.float32})
+    profile.update({'count': 1, 'dtype': rasterio.float32, 'nodata': None})
     outfile = nirpath.split('nir.tif')[0] + index + '.tif'
     with rasterio.open(outfile, 'w', **profile) as f:
         f.write(computed)
+        f.write_mask(mask)
     return outfile
 
 if __name__ == '__main__':
