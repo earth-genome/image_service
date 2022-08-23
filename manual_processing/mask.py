@@ -6,7 +6,7 @@ The masking is done by the rasterio.mask module, ref:
 The handling offered here, beyond that of the rasterio cli, is to map the 
 vector features into the coordinate system of the geotiff. 
 
-Usage: $ python mask.py img.tif feature_collection.json [-nd, -nf, -i]
+Usage: $ python mask.py img.tif feature_collection.json [-nd, -f, -i]
 See: $ python mask.py --help
 Output: A file img-masked.tif.
 
@@ -68,9 +68,8 @@ if __name__ == '__main__':
         help=('Override nodata value. Defaults to value for input geotiff, ' +
               'if available, or 0.'))
     parser.add_argument(
-        '-nf', '--notfilled', dest='filled', action='store_false',
-        help=('Flag. If set, then instead of filling the masked areas with ' +
-              'the nodata value, the image is returned as a masked array.'))
+        '-f', '--filled', dest='filled', action='store_true',
+        help=('Flag. If set, the masked areas are filled with nodata value.'))
     parser.add_argument(
         '-i', '--invert', action='store_true',
         help='Flag. If set, the area _inside_ vector shapes will be masked.')
