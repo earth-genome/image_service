@@ -1,16 +1,18 @@
 """Routines to process Landsat Surface Reflectance tiles. 
 
-Ordered from https://earthexplorer.usgs.gov, scenes are delivered as tar
-files containing each band as a separte TIF, with filenames of form
+Depends on: Local GDAL installation, called via subprocess module.
 
-LC08_L1TP_037034_20170309_20180125_01_T1_sr_band2.tif
+Ordered from https://earthexplorer.usgs.gov, scenes are delivered as tar
+files containing each band as a separte TIF.
 
 For Landsat8, R-G-B images are built from bands 4-3-2. For Landsat5, R-G-B 
 are built from bands 3-2-1.  
 
 Usage: Untar everything into a folder. Multiple scenes are fine, as
 the program will untangle them. All band files for a scene must share
-a common prefix, with filename of form prefixband?.tif or .TIF.
+a common prefix, with filename of form prefix{band_sig}?.tif or .TIF. 
+The variable band_sig is set with user flag and typically will be '_B' or
+'band', depending on Landsat file name format. 
 
 Then: 
 
@@ -23,11 +25,11 @@ The band ordering 4 3 2 or 3 2 1 is required. The scenes will be
 cropped to the footprint, if given. The image_dir defaults to pwd if not
 specified. 
 
-The -wp flag sets the white point of the output images. The Landsat
-histograms are confined to a small part of the possible 16-bit (or in
-older Level-1 images, 8-bit) range. Values in the range 2000-4000
-often work for 16-bit data. Adjust this if the output image is overly
-dark or overly saturated.
+The -wp, -bp flags designate input image pixel values to become white
+and black points of the output.  The Landsat histograms are confined
+to a small part of the possible 16-bit (or in older Level-1 images,
+8-bit) range. Adjust these if the output image is overly dark or
+overly saturated.
 
 The routine outputs one geotiff for each processed scene.
 
@@ -47,7 +49,11 @@ import _env
 from geobox import geobox
 from geobox import geojsonio
 
-DEFAULT_BIT_DEPTH = 16
+# In Landsat Collection 2, 0 is the NaN fill value
+PIXEL_RANGES = {
+    'uint16': (1, 65535),
+    'uint8': (1, 255)
+}
 
 def build_rgb(prefix, paths, bounds, **kwargs):
     """Build an RGB image from individual color bands.
@@ -78,7 +84,7 @@ def combine_bands(prefix, paths):
     subprocess.call(commands)
     return combined
 
-def crop_and_rescale(vrtfile, bounds, **kwargs):
+def crop_and_rescale(vrtfile, bounds, pixel_ranges=PIXEL_RANGES, **kwargs):
     """Crop virtual image to bounds and linearly rescale the histogram.
 
     Outputs a geotiff; returns the filename.
@@ -92,25 +98,31 @@ def crop_and_rescale(vrtfile, bounds, **kwargs):
     if bounds:
         gdal_bounds = [str(bounds[n]) for n in (0, 3, 2, 1)]
         commands += ['-projwin_srs', 'EPSG:4326', '-projwin', *gdal_bounds]
-    wp = kwargs.get('white_point')
+
+    with rasterio.open(vrtfile) as f:
+        dtype = f.profile['dtype']
+    input_range = pixel_ranges.get(dtype)
+    if not input_range:
+        raise ValueError(f'Unexpected input dtype {dtype}.')
+    wp = kwargs.get('white_point', max(input_range))
+    bp = kwargs.get('black_point', min(input_range))
     
     bit_depth = kwargs.get('bit_depth')
     if bit_depth == 8:
         commands += ['-ot', 'Byte']
-        if wp:
-            commands += ['-scale', '0', str(wp), '0', '255']
     elif bit_depth == 16:
         commands += ['-ot', 'UInt16']
-        if wp:
-            commands += ['-scale', '0', str(wp), '0', '65535']
-        else:
-            raise ValueError(f'Invalid output bit depth: {bit_depth}.')
+    else:
+        raise ValueError(f'Invalid output bit depth: {bit_depth}.')
+    commands += ['-scale', str(bp), str(wp),
+                    *[str(r) for r in pixel_ranges.get(f'uint{bit_depth}')]]
     subprocess.call(commands)
     return tiffile
 
-def write_mask(outfile, raw_tile, nodata=-9999):
+def write_mask(outfile, raw_tile):
     """Write a no-data mask to outfile based on nodata values in raw_tile."""
     with rasterio.open(raw_tile) as f:
+        nodata = f.profile['nodata']
         raw = f.read()[0]
     im = rasterio.open(outfile, 'r+')
     msk = np.ones(im.shape, dtype='bool')
@@ -118,17 +130,17 @@ def write_mask(outfile, raw_tile, nodata=-9999):
     im.write_mask(msk)
     im.close()
 
-def partition(paths, bands):
+def partition(paths, bands, band_sig):
     """Partition input paths by common prefixes and filter by bands.
 
     Returns: dict of prefixes and paths
     """
-    prefixes = set([p.split('band')[0] for p in paths])
+    prefixes = set([p.split(band_sig)[0] for p in paths])
     partition = {}
     for prefix in prefixes:
         partition.update({
             prefix: [p for b in bands for p in paths if prefix in p and
-                         f'band{b}.' in p]})
+                         f'{band_sig}{b}.' in p]})
     return partition
 
 if __name__ == '__main__':
@@ -155,6 +167,11 @@ if __name__ == '__main__':
         help='Image integer bit value to be reset to white.'
     )
     parser.add_argument(
+        '-bp', '--black_point',
+        type=int,
+        help='Image integer bit value to be reset to black (1).'
+    )
+    parser.add_argument(
         '-d', '--image_dir',
         type=str,
         default='',
@@ -173,16 +190,24 @@ if __name__ == '__main__':
         action='store_true',
         help='Flag: If set, a sidecar no-data mask will be created.'
     )
+    parser.add_argument(
+        '-bs', '--band_sig',
+        type=str,
+        default='_B',
+        help='The common string immediately preceding Landsat band numbers '
+             'in file paths. E.g. paths of form LC09*T1_SR_B4.TIF would take '
+             '"_B" or "TI_SR_B". Default: "_B".'
+    )
     args = parser.parse_args()
 
     geoms = geojsonio.load_geometries(args.geojson) if args.geojson else []
     bounds = geobox.bbox_from_geometries(geoms).bounds if geoms else []
-    
-    base = os.path.join(args.image_dir, '*band?')
+
+    base = os.path.join(args.image_dir, f'*{args.band_sig}?')
     paths = [glob.glob(base + ext) for ext in ['.tif', '.TIF']]
     paths = [p for sublist in paths for p in sublist]
         
-    grouped = partition(paths, args.bandlist)
+    grouped = partition(paths, args.bandlist, args.band_sig)
     for prefix, grouped_paths in grouped.items():
         build_rgb(prefix, grouped_paths, bounds, **vars(args))
 

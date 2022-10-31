@@ -1,12 +1,10 @@
 """Routines to process Landsat Surface Reflectance tiles into landcover
 indices, following and drawing from reduce_landsat.py.
 
-Requires: A full GDAL install, including python package osgeo. 
+Requires: A full GDAL install.
 
 Ordered from https://earthexplorer.usgs.gov, scenes are delivered as tar
-files containing each band as a separte TIF, with filenames of form
-
-LC08_L1TP_037034_20170309_20180125_01_T1_sr_band2.tif
+files containing each band as a separte TIF.
 
 For Landsat8, NIR-R-G-B bands are numbered 5 4 3 2. For Landsat5,
 corresponding bands are numbered 4 3 2 1. (Blue band is never used and
@@ -15,6 +13,8 @@ can be omitted.)
 Usage: Untar everything into a folder. Multiple scenes are fine, as
 the program will untangle them. All band files for a scene must share
 a common prefix, with filename of form prefixband?.tif or .TIF.
+The variable band_sig is set with user flag and typically will be '_B' or
+'band', depending on Landsat file name format. 
 
 $ python reduce_landsat_to_indices.py 5 4 3 2 -i ndvi -g footprint.geojson -d image_dir
 
@@ -91,7 +91,6 @@ def calculate_index(nirpath, colorpath, index):
         color = f.read().astype('float32')
         mask = f.read_masks(1)
         profile = f.profile.copy()
-
     if index == 'ndvi':
         computed = (nir - color)/(nir + color)
     elif index == 'ndwi':
@@ -138,16 +137,24 @@ if __name__ == '__main__':
         default='',
         help='Directory containing image band files. Defaults to pwd.'
     )
+    parser.add_argument(
+        '-bs', '--band_sig',
+        type=str,
+        default='_B',
+        help='The common string immediately preceding Landsat band numbers '
+             'in file paths. E.g. paths of form LC09*T1_SR_B4.TIF would take '
+             '"_B" or "TI_SR_B". Default: "_B".'
+    )
     args = parser.parse_args()
 
     geoms = geojsonio.load_geometries(args.geojson) if args.geojson else []
     bounds = geobox.bbox_from_geometries(geoms).bounds if geoms else []
 
-    base = os.path.join(args.image_dir, '*band?')
+    base = os.path.join(args.image_dir, f'*{args.band_sig}?')
     paths = [glob.glob(base + ext) for ext in ['.tif', '.TIF']]
     paths = [p for sublist in paths for p in sublist]
-    
-    grouped = reduce_landsat.partition(paths, args.bandlist)
+
+    grouped = reduce_landsat.partition(paths, args.bandlist, args.band_sig)
     for prefix, grouped_paths in grouped.items():
         for index in args.indices:
             build_index(prefix, grouped_paths, bounds, index)
