@@ -52,6 +52,7 @@ from geobox import geojsonio
 # In Landsat Collection 2, 0 is the NaN fill value
 PIXEL_RANGES = {
     'uint16': (1, 65535),
+    'int16': (1, 32767),
     'uint8': (1, 255)
 }
 
@@ -81,7 +82,7 @@ def combine_bands(prefix, paths):
     """Assemble R-G-B image bands into GDAL .vrt file."""
     combined = prefix + '.vrt'
     commands = ['gdalbuildvrt', '-separate', combined, *paths]
-    subprocess.call(commands)
+    subprocess.run(commands)
     return combined
 
 def crop_and_rescale(vrtfile, bounds, pixel_ranges=PIXEL_RANGES, **kwargs):
@@ -106,6 +107,7 @@ def crop_and_rescale(vrtfile, bounds, pixel_ranges=PIXEL_RANGES, **kwargs):
         raise ValueError(f'Unexpected input dtype {dtype}.')
     wp = kwargs.get('white_point', max(input_range))
     bp = kwargs.get('black_point', min(input_range))
+    print(bp)
     
     bit_depth = kwargs.get('bit_depth')
     if bit_depth == 8:
@@ -116,7 +118,7 @@ def crop_and_rescale(vrtfile, bounds, pixel_ranges=PIXEL_RANGES, **kwargs):
         raise ValueError(f'Invalid output bit depth: {bit_depth}.')
     commands += ['-scale', str(bp), str(wp),
                     *[str(r) for r in pixel_ranges.get(f'uint{bit_depth}')]]
-    subprocess.call(commands)
+    subprocess.run(commands)
     return tiffile
 
 def write_mask(outfile, raw_tile):
@@ -208,8 +210,9 @@ if __name__ == '__main__':
     paths = [p for sublist in paths for p in sublist]
         
     grouped = partition(paths, args.bandlist, args.band_sig)
+    kwargs = {k:v for k,v in vars(args).items() if v is not None}
     for prefix, grouped_paths in grouped.items():
-        build_rgb(prefix, grouped_paths, bounds, **vars(args))
+        build_rgb(prefix, grouped_paths, bounds, **kwargs)
 
 
     

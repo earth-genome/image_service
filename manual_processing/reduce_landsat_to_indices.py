@@ -80,7 +80,7 @@ def crop(prefix, bandfile, bounds):
     if bounds:
         gdal_bounds = [str(bounds[n]) for n in (0, 3, 2, 1)]
         commands += ['-projwin_srs', 'EPSG:4326', '-projwin', *gdal_bounds]
-    subprocess.call(commands)
+    subprocess.run(commands)
     return cropfile
 
 def calculate_index(nirpath, colorpath, index):
