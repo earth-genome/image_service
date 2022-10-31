@@ -55,7 +55,7 @@ def bbox_from_geometries(geoms):
 
     Returns: shapely box
     """
-    union = unary_union([geometry.asShape(g) for g in geoms])
+    union = unary_union([geometry.shape(g) for g in geoms])
     return geometry.box(*union.bounds)
     
 def osm_to_shapely_box(osm_bbox):
