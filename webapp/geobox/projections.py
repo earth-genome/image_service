@@ -22,7 +22,7 @@ def project_to_utm(lat, lon, epsg_code=None):
     """
     if not epsg_code:
         epsg_code = get_utm_code(lat, lon)
-    projector = pyproj.Proj(init='epsg:{}'.format(epsg_code))
+    projector = pyproj.Proj('epsg:{}'.format(epsg_code))
     return projector(lon, lat)
 
 def project_geojson_geom(geom, epsg_code, inverse=False):
@@ -34,7 +34,7 @@ def project_geojson_geom(geom, epsg_code, inverse=False):
 
     Returns: A copy of the dict geom, with coordinates updated.
     """
-    proj = pyproj.Proj(init='epsg:{}'.format(epsg_code))
+    proj = pyproj.Proj('epsg:{}'.format(epsg_code))
 
     def _recurse_arrays(coord_array, proj, inverse):
         try:
