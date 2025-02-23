@@ -40,7 +40,7 @@ def project_geojson_geom(geom, epsg_code, inverse=False):
         try:
             iter(coord_array[0])
         except TypeError:
-            return list(proj(*coord_array, inverse=inverse))
+            return list(proj(*coord_array[:2], inverse=inverse))
         return [_recurse_arrays(c, proj, inverse) for c in coord_array]
 
     new_coords = _recurse_arrays(geom['coordinates'], proj, inverse)
