@@ -39,8 +39,8 @@ def extract_shapes(geotiff, raster_vals=None, source_projection=False):
         img = f.read()
         profile = f.profile
 
-    epsg_code = profile['crs']['init'].split('epsg:')[-1]
-    pixel_max = pixel_limits.get_max(profile['dtype'])
+    epsg_code = profile['crs'].to_epsg()
+    pixel_max = pixel_limits.get_max(np.dtype(profile['dtype']))
     bands = list(range(profile['count']))
     
     if not raster_vals:

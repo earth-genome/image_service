@@ -6,8 +6,8 @@ def get_max(dtype):
     """Determine the maximum allowed pixel value based on image dtype."""
     if np.issubdtype(dtype, np.integer):
         return np.iinfo(dtype).max
-    elif np.issubdtype(dtype, np.float):
+    elif np.issubdtype(dtype, np.floating):
         return 1.0
     else:
-        raise TypeError('Image dtype <{}> not recognized.'.format(dtype))
+        raise TypeError(f'Image dtype <{dtype}> not recognized.')
 

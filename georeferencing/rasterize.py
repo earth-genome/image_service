@@ -15,6 +15,7 @@ import json
 import os
 import sys
 
+import numpy as np
 import rasterio
 import rasterio.features
 
@@ -27,10 +28,10 @@ def burn(geojson, geotiff):
     """Burn features in geojson into a container defined by existing geotiff."""
     with rasterio.open(geotiff) as f:
         profile = f.profile.copy()
-
-    epsg_code = profile['crs']['init'].split('epsg:')[-1]
+        
+    epsg_code = profile['crs'].to_epsg()
     shape = (profile['height'], profile['width'])
-    pixel_max = pixel_limits.get_max(profile['dtype'])
+    pixel_max = pixel_limits.get_max(np.dtype(profile['dtype']))
     geoms = geojsonio.load_geometries(geojson)
     geoms = [projections.project_geojson_geom(g, epsg_code) for g in geoms]
 
